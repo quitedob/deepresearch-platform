@@ -1,0 +1,148 @@
+# 模型配置文件
+# 将硬编码的模型元数据移到配置文件中，便于维护和更新
+
+providers:
+  deepseek:
+    display_name: "DeepSeek"
+    enabled: true
+    sort_order: 1
+  zhipu:
+    display_name: "智谱AI"
+    enabled: true
+    sort_order: 2
+  openai:
+    display_name: "OpenAI兼容(GLM)"
+    enabled: true
+    sort_order: 3
+  ollama:
+    display_name: "Ollama"
+    enabled: true
+    sort_order: 4
+  openrouter:
+    display_name: "OpenRouter"
+    enabled: true
+    sort_order: 5
+
+models:
+  # DeepSeek 模型
+  deepseek-chat:
+    provider: deepseek
+    display_name: "DeepSeek Chat"
+    description: "DeepSeek-V3 非思考模式"
+    context_length: 128000
+    max_tokens: 8000
+    capabilities:
+      - streaming
+      - tools
+      - json_output
+    is_deep_thinking: false
+    enabled: true
+    sort_order: 1
+
+  deepseek-reasoner:
+    provider: deepseek
+    display_name: "DeepSeek Reasoner"
+    description: "DeepSeek-V3 思考模式"
+    context_length: 128000
+    max_tokens: 64000
+    capabilities:
+      - streaming
+      - reasoning
+      - json_output
+    is_deep_thinking: true
+    enabled: true
+    sort_order: 2
+
+  # 智谱AI 模型
+  glm-4.7:
+    provider: zhipu
+    display_name: "GLM-4.7"
+    description: "智谱AI高智能旗舰模型"
+    context_length: 200000
+    max_tokens: 128000
+    capabilities:
+      - streaming
+      - tools
+      - web_search
+    is_deep_thinking: true
+    enabled: true
+    sort_order: 1
+
+  glm-4.5-air:
+    provider: zhipu
+    display_name: "GLM-4.5-Air"
+    description: "智谱AI高性价比模型"
+    context_length: 128000
+    max_tokens: 96000
+    capabilities:
+      - streaming
+      - tools
+    is_deep_thinking: false
+    enabled: true
+    sort_order: 2
+
+  # Ollama 本地模型
+  gemma3:4b:
+    provider: ollama
+    display_name: "Gemma 3 4B"
+    description: "Google Gemma 3 4B本地模型"
+    context_length: 8192
+    max_tokens: 4096
+    capabilities:
+      - streaming
+      - json_output
+      - tools
+    is_deep_thinking: false
+    enabled: true
+    sort_order: 1
+
+  gemma3:12b:
+    provider: ollama
+    display_name: "Gemma 3 12B"
+    description: "Google Gemma 3 12B本地模型"
+    context_length: 8192
+    max_tokens: 4096
+    capabilities:
+      - streaming
+      - json_output
+      - tools
+    is_deep_thinking: true
+    enabled: true
+    sort_order: 2
+
+  qwen3:8b:
+    provider: ollama
+    display_name: "Qwen 3 8B"
+    description: "阿里通义千问3本地模型"
+    context_length: 32768
+    max_tokens: 4096
+    capabilities:
+      - streaming
+      - json_output
+      - tools
+    is_deep_thinking: false
+    enabled: true
+    sort_order: 3
+
+  # OpenRouter 模型（通过统一API访问400+模型）
+  moonshotai/kimi-k2:free:
+    provider: openrouter
+    display_name: "Kimi K2 (Free)"
+    description: "Moonshot AI Kimi K2 免费模型"
+    context_length: 128000
+    max_tokens: 8192
+    capabilities:
+      - streaming
+      - tools
+      - json_output
+    is_deep_thinking: false
+    enabled: true
+    sort_order: 1
+
+# 深度思考模型映射
+deep_thinking_models:
+  deepseek: deepseek-reasoner
+  zhipu: glm-4.7
+  openai: glm-4.7
+  ollama: gemma3:12b
+  openrouter: moonshotai/kimi-k2:free

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- AI Brain Icon -->
+  <defs>
+    <linearGradient id="brainGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <circle cx="24" cy="24" r="22" stroke="url(#brainGrad)" stroke-width="2" fill="none" opacity="0.3"/>
+  <path d="M24 8c-8.837 0-16 7.163-16 16s7.163 16 16 16 16-7.163 16-16S32.837 8 24 8z" fill="none" stroke="url(#brainGrad)" stroke-width="1.5"/>
+  <path d="M18 20c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke="url(#brainGrad)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M15 26c0-4.971 4.029-9 9-9s9 4.029 9 9" stroke="url(#brainGrad)" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="24" cy="24" r="4" fill="url(#brainGrad)"/>
+  <circle cx="18" cy="28" r="2" fill="url(#brainGrad)" opacity="0.8"/>
+  <circle cx="30" cy="28" r="2" fill="url(#brainGrad)" opacity="0.8"/>
+  <path d="M20 32l4-4 4 4" stroke="url(#brainGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,610 @@
+/* src/assets/theme.css */
+/* Apple Design System - Enhanced with macOS/iOS aesthetics */
+html, body, #app {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Mono", "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Noto Sans", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.47059;
+    font-weight: 400;
+    letter-spacing: -0.022em;
+}
+
+/* Enhanced Light Theme - macOS Ventura inspired */
+:root {
+    /* Core Colors */
+    --primary-bg: #ffffff;
+    --secondary-bg: #f5f5f7;
+    --tertiary-bg: #e8e8ed;
+    --card-bg: rgba(255, 255, 255, 0.85);
+
+    /* Text Colors */
+    --text-primary: #1d1d1f;
+    --text-secondary: #6e6e73;
+    --text-tertiary: #86868b;
+    --text-quaternary: #aeaeb2;
+
+    /* UI Colors */
+    --border-color: rgba(60, 60, 67, 0.18);
+    --border-strong: rgba(60, 60, 67, 0.29);
+    --hover-bg: rgba(0, 0, 0, 0.04);
+    --active-bg: rgba(0, 0, 0, 0.08);
+
+    /* Accent Colors */
+    --accent-blue: #007aff;
+    --accent-green: #34c759;
+    --accent-orange: #ff9500;
+    --accent-red: #ff3b30;
+    --accent-purple: #af52de;
+
+    /* Button Colors */
+    --button-bg: #007aff;
+    --button-text: #ffffff;
+    --button-secondary-bg: rgba(0, 122, 255, 0.12);
+    --button-secondary-text: #007aff;
+
+    /* Input Colors */
+    --input-bg: rgba(255, 255, 255, 0.8);
+    --input-border: rgba(60, 60, 67, 0.18);
+    --input-focus-border: #007aff;
+
+    /* Effects */
+    --shadow-elev: 0 2px 20px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+    --shadow-elev-high: 0 8px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+    --blur: saturate(180%) blur(20px);
+
+    /* Gradients */
+    --gradient-blue: linear-gradient(135deg, #007aff 0%, #5856d6 100%);
+    --gradient-purple: linear-gradient(135deg, #af52de 0%, #5856d6 100%);
+    --gradient-green: linear-gradient(135deg, #34c759 0%, #30d158 100%);
+
+    /* Sizing */
+    --radius-small: 8px;
+    --radius-medium: 12px;
+    --radius-large: 16px;
+    --radius-xlarge: 20px;
+
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+}
+
+/* Enhanced Dark Theme - iOS 16 inspired */
+.dark {
+    /* Core Colors */
+    --primary-bg: #000000;
+    --secondary-bg: #1c1c1e;
+    --tertiary-bg: #2c2c2e;
+    --card-bg: rgba(28, 28, 30, 0.85);
+
+    /* Text Colors */
+    --text-primary: #ffffff;
+    --text-secondary: #ebebf5;
+    --text-tertiary: #ebebf599;
+    --text-quaternary: #ebebf54d;
+
+    /* UI Colors */
+    --border-color: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --hover-bg: rgba(255, 255, 255, 0.06);
+    --active-bg: rgba(255, 255, 255, 0.12);
+
+    /* Accent Colors */
+    --accent-blue: #0a84ff;
+    --accent-green: #30d158;
+    --accent-orange: #ff9f0a;
+    --accent-red: #ff453a;
+    --accent-purple: #bf5af2;
+
+    /* Button Colors */
+    --button-bg: #0a84ff;
+    --button-text: #ffffff;
+    --button-secondary-bg: rgba(10, 132, 255, 0.18);
+    --button-secondary-text: #64d2ff;
+
+    /* Input Colors */
+    --input-bg: rgba(44, 44, 46, 0.8);
+    --input-border: rgba(255, 255, 255, 0.12);
+    --input-focus-border: #0a84ff;
+
+    /* Effects */
+    --shadow-elev: 0 2px 20px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.15);
+    --shadow-elev-high: 0 8px 40px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.25);
+    --blur: saturate(180%) blur(24px);
+
+    /* Gradients */
+    --gradient-blue: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+    --gradient-purple: linear-gradient(135deg, #bf5af2 0%, #5e5ce6 100%);
+    --gradient-green: linear-gradient(135deg, #30d158 0%, #32d74b 100%);
+}
+
+/* Global Transitions */
+body, #app {
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Apple-style Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+}
+
+/* Selection Styling */
+::selection {
+    background: rgba(0, 122, 255, 0.2);
+}
+
+.dark ::selection {
+    background: rgba(10, 132, 255, 0.3);
+}
+
+/* Focus Outline */
+*:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+    border-radius: var(--radius-small);
+}
+
+/* ========================================
+   Enhanced Message Bubble Styles
+   ======================================== */
+
+/* Message Text Base Styles */
+.message-text {
+    white-space: pre-wrap;
+    line-height: 1.7;
+    letter-spacing: -0.01em;
+}
+
+.message-text p {
+    margin: 0.6em 0;
+    line-height: 1.7;
+}
+
+.message-text p:first-child { margin-top: 0; }
+.message-text p:last-child { margin-bottom: 0; }
+
+/* Code Block Styles - Enhanced */
+.message-text pre {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    padding: 16px 20px;
+    border-radius: 12px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    position: relative;
+}
+
+.message-text pre::before {
+    content: attr(data-lang);
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.user .message-text pre {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.message-text pre code {
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+    line-height: inherit;
+    color: inherit;
+}
+
+/* Inline Code Styles */
+.message-text p code,
+.message-text li code {
+    background: rgba(128, 128, 128, 0.18);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.88em;
+    color: var(--accent-blue);
+    border: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.user .message-text p code,
+.user .message-text li code {
+    background: rgba(255, 255, 255, 0.2);
+    color: #e0f2fe;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Text Formatting */
+.message-text strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.message-text em {
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
+/* Lists */
+.message-text ul,
+.message-text ol {
+    padding-left: 24px;
+    margin: 12px 0;
+}
+
+.message-text li {
+    margin: 6px 0;
+    line-height: 1.7;
+}
+
+.message-text li::marker {
+    color: var(--accent-blue);
+}
+
+/* Blockquote */
+.message-text blockquote {
+    border-left: 4px solid var(--accent-blue);
+    padding: 12px 20px;
+    margin: 16px 0;
+    background: rgba(59, 130, 246, 0.08);
+    border-radius: 0 8px 8px 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.user .message-text blockquote {
+    border-left-color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Links */
+.message-text a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.message-text a:hover {
+    border-bottom-color: var(--accent-blue);
+}
+
+.user .message-text a {
+    color: #bfdbfe;
+}
+
+.user .message-text a:hover {
+    color: #dbeafe;
+    border-bottom-color: #bfdbfe;
+}
+
+/* Headings in Messages */
+.message-text h1,
+.message-text h2,
+.message-text h3,
+.message-text h4,
+.message-text h5,
+.message-text h6 {
+    margin: 20px 0 12px 0;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.message-text h1:first-child,
+.message-text h2:first-child,
+.message-text h3:first-child,
+.message-text h4:first-child {
+    margin-top: 0;
+}
+
+.message-text h1 { font-size: 1.5em; }
+.message-text h2 { font-size: 1.35em; }
+.message-text h3 { font-size: 1.2em; }
+.message-text h4 { font-size: 1.1em; }
+
+/* Tables */
+.message-text table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+}
+
+.message-text th,
+.message-text td {
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.message-text th {
+    background: var(--secondary-bg);
+    font-weight: 600;
+}
+
+.message-text tr:nth-child(even) {
+    background: rgba(128, 128, 128, 0.05);
+}
+
+/* Horizontal Rule */
+.message-text hr {
+    border: none;
+    height: 1px;
+    background: var(--border-color);
+    margin: 20px 0;
+}
+
+/* Images */
+.message-text img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 12px 0;
+}
+
+/* LaTeX/Math Rendering */
+.message-text .katex-display {
+    margin: 16px 0;
+    overflow-x: auto;
+    padding: 12px;
+    background: rgba(128, 128, 128, 0.05);
+    border-radius: 8px;
+}
+
+.message-text .katex {
+    font-size: 1.1em;
+}
+
+/* SVG Rendering */
+.message-text svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 12px auto;
+}
+
+/* Mermaid Diagrams */
+.message-text .mermaid {
+    background: var(--secondary-bg);
+    padding: 16px;
+    border-radius: 12px;
+    margin: 16px 0;
+    overflow-x: auto;
+}
+
+/* ========================================
+   Dark Mode Specific Enhancements
+   ======================================== */
+.dark .message-text pre {
+    background: #0d1117;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .message-text p code,
+.dark .message-text li code {
+    background: rgba(110, 118, 129, 0.25);
+    border-color: rgba(110, 118, 129, 0.3);
+}
+
+.dark .message-text blockquote {
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.dark .message-text th {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dark .message-text tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Light Mode Specific */
+.light .message-text pre {
+    background: #f6f8fa;
+    color: #24292f;
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+.light .message-text p code,
+.light .message-text li code {
+    background: rgba(175, 184, 193, 0.2);
+    color: #0969da;
+}
+
+.light .user .message-text pre {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+/* ========================================
+   Highlight.js Theme Overrides
+   ======================================== */
+.hljs {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag { color: #ff7b72; }
+.dark .hljs-string,
+.dark .hljs-attr { color: #a5d6ff; }
+.dark .hljs-number,
+.dark .hljs-literal { color: #79c0ff; }
+.dark .hljs-comment { color: #8b949e; font-style: italic; }
+.dark .hljs-function,
+.dark .hljs-title { color: #d2a8ff; }
+.dark .hljs-variable,
+.dark .hljs-template-variable { color: #ffa657; }
+.dark .hljs-type,
+.dark .hljs-class { color: #7ee787; }
+
+.light .hljs-keyword,
+.light .hljs-selector-tag { color: #cf222e; }
+.light .hljs-string,
+.light .hljs-attr { color: #0a3069; }
+.light .hljs-number,
+.light .hljs-literal { color: #0550ae; }
+.light .hljs-comment { color: #6e7781; font-style: italic; }
+.light .hljs-function,
+.light .hljs-title { color: #8250df; }
+.light .hljs-variable,
+.light .hljs-template-variable { color: #953800; }
+.light .hljs-type,
+.light .hljs-class { color: #116329; }
+
+/* ========================================
+   Enhanced Message Bubble Styles
+   ======================================== */
+
+/* User Message Bubble - Gradient Enhancement */
+.user .message-bubble {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.dark .user .message-bubble {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+/* Assistant Message Bubble */
+.dark .assistant .message-bubble {
+    background: linear-gradient(135deg, #1c1c1e 0%, #2c2c2e 100%);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.light .assistant .message-bubble {
+    background: linear-gradient(135deg, #ffffff 0%, #f5f5f7 100%);
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* Avatar Enhancements */
+.user .avatar {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.assistant .avatar {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* ========================================
+   Global Dark Mode Enhancements
+   ======================================== */
+
+/* Input Fields */
+.dark input,
+.dark textarea,
+.dark select {
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    border-color: var(--input-border);
+}
+
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+    border-color: var(--input-focus-border);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+}
+
+/* Buttons */
+.dark button {
+    transition: all 0.2s ease;
+}
+
+/* Cards and Panels */
+.dark .card,
+.dark .panel {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+/* Modal Overlays */
+.dark .modal-overlay {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+/* Dropdown Menus */
+.dark .dropdown,
+.dark .menu-dropdown {
+    background: var(--secondary-bg);
+    border-color: var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Tooltips */
+.dark .tooltip {
+    background: var(--tertiary-bg);
+    color: var(--text-primary);
+}
+
+/* Progress Bars */
+.dark .progress-bar {
+    background: var(--secondary-bg);
+}
+
+.dark .progress-fill {
+    background: var(--accent-blue);
+}
+
+/* Badges */
+.dark .badge {
+    background: var(--tertiary-bg);
+    color: var(--text-primary);
+}
+
+/* Dividers */
+.dark hr,
+.dark .divider {
+    background: var(--border-color);
+}
+
+/* ========================================
+   Light Mode Specific Styles
+   ======================================== */
+
+.light input,
+.light textarea,
+.light select {
+    background-color: #ffffff;
+    border-color: rgba(60, 60, 67, 0.18);
+}
+
+.light input:focus,
+.light textarea:focus,
+.light select:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+
+.light .dropdown,
+.light .menu-dropdown {
+    background: #ffffff;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}

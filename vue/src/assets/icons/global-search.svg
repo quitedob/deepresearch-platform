@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Global Search Icon -->
+  <defs>
+    <linearGradient id="globeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <circle cx="14" cy="14" r="10" stroke="url(#globeGrad)" stroke-width="1.5" fill="none"/>
+  <ellipse cx="14" cy="14" rx="4" ry="10" stroke="url(#globeGrad)" stroke-width="1" fill="none"/>
+  <path d="M4 14h20" stroke="url(#globeGrad)" stroke-width="1"/>
+  <path d="M14 4v20" stroke="url(#globeGrad)" stroke-width="1"/>
+  <path d="M22 22l6 6" stroke="url(#globeGrad)" stroke-width="2" stroke-linecap="round"/>
+</svg>

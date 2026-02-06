@@ -1,0 +1,109 @@
+server:
+  port: 8080
+  env: development
+  read_timeout: 30
+  write_timeout: 30
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: "1234"
+  db_name: go_deep_research
+  ssl_mode: disable
+  max_connections: 100
+  idle_connections: 10
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  ttl: 3600
+
+llm:
+  default_provider: deepseek
+  timeout: 120
+  retries: 3
+  providers:
+    deepseek:
+      api_key: "sk-6f9bbda5a4e14c2c91a9baeb604f6abe"
+      base_url: https://api.deepseek.com
+      models:
+        - deepseek-chat      # DeepSeek-V3.2-Exp 非思考模式
+        - deepseek-reasoner  # DeepSeek-V3.2-Exp 思考模式
+      default_model: deepseek-chat
+      temperature: 1.0
+      max_tokens: 4096
+    zhipu:
+      api_key: "82c46ba95a2d454f98d0de954970e2ae.g0yvxIXhxwDt4cU9"
+      base_url: https://open.bigmodel.cn/api/paas/v4
+      models:
+        - glm-4.7
+        - glm-4.5-air
+      default_model: glm-4.5-air
+      temperature: 0.7
+      max_tokens: 4096
+    openai:
+      api_key: "82c46ba95a2d454f98d0de954970e2ae.g0yvxIXhxwDt4cU9"
+      base_url: https://api.z.ai/api/coding/paas/v4
+      models:
+        - glm-4.7
+        - glm-4.5-air
+      default_model: glm-4.5-air
+      temperature: 0.7
+      max_tokens: 4096
+    ollama:
+      api_key: ""
+      base_url: http://localhost:11434
+      models:
+        - gemma3:4b
+        - gemma3:12b
+        - qwen3:8b
+      default_model: gemma3:4b
+      temperature: 0.7
+      max_tokens: 4096
+    openrouter:
+      api_key: "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"
+      base_url: https://openrouter.ai/api/v1
+      models:
+        - moonshotai/kimi-k2:free
+      default_model: moonshotai/kimi-k2:free
+      temperature: 0.7
+      max_tokens: 4096
+
+research:
+  max_iterations: 10
+  session_timeout: 3600
+  max_sources: 20
+  enable_cache: true
+  worker_pool_size: 10
+
+ai_question:
+  default_provider: deepseek
+  default_model: deepseek-chat
+  timeout: 90
+  max_questions_per_request: 20
+
+security:
+  jwt_secret: change-this-to-a-strong-random-secret-in-production
+  jwt_expiration: 86400
+  bcrypt_cost: 12
+  cors:
+    allow_origins:
+      - http://localhost:3000
+      - http://localhost:8080
+    allow_methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+  rate_limit:
+    enabled: true
+    requests_per_min: 100
+
+logging:
+  level: info
+  format: json
+  output_path: stdout
