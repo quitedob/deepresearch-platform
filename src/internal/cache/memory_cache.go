@@ -32,10 +32,40 @@ type MemoryCache struct {
 
 // NewMemoryCache creates a new in-memory cache with LRU eviction
 func NewMemoryCache(maxSize int) *MemoryCache {
-	return &MemoryCache{
+	m := &MemoryCache{
 		maxSize: maxSize,
 		items:   make(map[string]*list.Element),
 		lru:     list.New(),
+	}
+
+	// 启动后台清理协程，定期淘汰过期条目
+	go m.cleanupExpired()
+
+	return m
+}
+
+// cleanupExpired 定期清理过期缓存条目（防止只写不读的 key 永久驻留内存）
+func (m *MemoryCache) cleanupExpired() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		m.mu.Lock()
+		now := time.Now()
+		var toDelete []string
+		for key, elem := range m.items {
+			entry := elem.Value.(*cacheEntry)
+			if now.After(entry.expiresAt) {
+				toDelete = append(toDelete, key)
+			}
+		}
+		for _, key := range toDelete {
+			if elem, ok := m.items[key]; ok {
+				m.lru.Remove(elem)
+				delete(m.items, key)
+			}
+		}
+		m.mu.Unlock()
 	}
 }
 

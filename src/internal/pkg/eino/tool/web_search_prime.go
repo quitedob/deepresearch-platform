@@ -3,12 +3,9 @@
 package tool
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -24,9 +21,7 @@ const (
 
 // WebSearchPrimeTool Web Search Prime MCP 工具
 type WebSearchPrimeTool struct {
-	apiKey  string
-	timeout time.Duration
-	client  *http.Client
+	mcpClient *MCPClient
 }
 
 // WebSearchPrimeConfig 配置
@@ -41,9 +36,11 @@ func NewWebSearchPrimeTool(config WebSearchPrimeConfig) *WebSearchPrimeTool {
 		config.Timeout = 60 * time.Second
 	}
 	return &WebSearchPrimeTool{
-		apiKey:  config.APIKey,
-		timeout: config.Timeout,
-		client:  &http.Client{Timeout: config.Timeout},
+		mcpClient: NewMCPClient(MCPClientConfig{
+			APIKey:  config.APIKey,
+			BaseURL: webSearchPrimeMCPEndpoint,
+			Timeout: config.Timeout,
+		}),
 	}
 }
 
@@ -84,94 +81,29 @@ func (t *WebSearchPrimeTool) InvokableRun(ctx context.Context, argumentsInJSON s
 	if args.SearchQuery == "" {
 		return "", fmt.Errorf("search_query is required")
 	}
-	if t.apiKey == "" {
-		return "", fmt.Errorf("API key not configured for Web Search Prime")
+
+	// 构建参数
+	arguments := map[string]interface{}{
+		"search_query": args.SearchQuery,
+	}
+	if args.SearchRecencyFilter != "" {
+		arguments["search_recency_filter"] = args.SearchRecencyFilter
+	}
+	if args.ContentSize != "" {
+		arguments["content_size"] = args.ContentSize
 	}
 
-	return t.search(ctx, args.SearchQuery, args.SearchRecencyFilter, args.ContentSize)
-}
-
-func (t *WebSearchPrimeTool) search(ctx context.Context, query, recencyFilter, contentSize string) (string, error) {
-	arguments := map[string]string{
-		"search_query": query,
-	}
-	if recencyFilter != "" {
-		arguments["search_recency_filter"] = recencyFilter
-	}
-	if contentSize != "" {
-		arguments["content_size"] = contentSize
-	}
-
-	reqBody := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "tools/call",
-		"params": map[string]interface{}{
-			"name":      "webSearchPrime",
-			"arguments": arguments,
-		},
-	}
-
-	jsonBody, err := json.Marshal(reqBody)
+	// 使用 MCP 客户端调用工具
+	result, err := t.mcpClient.CallTool(ctx, "web_search_prime", arguments)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", webSearchPrimeMCPEndpoint, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.apiKey))
-
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Web Search Prime API failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var mcpResp struct {
-		Result struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"result"`
-		Error *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-
-	if err := json.Unmarshal(body, &mcpResp); err != nil {
-		return "", fmt.Errorf("failed to parse MCP response: %w", err)
-	}
-
-	if mcpResp.Error != nil {
-		return "", fmt.Errorf("MCP error (code %d): %s", mcpResp.Error.Code, mcpResp.Error.Message)
-	}
-
-	var result strings.Builder
-	for _, content := range mcpResp.Result.Content {
-		if content.Type == "text" {
-			result.WriteString(content.Text)
-		}
-	}
-
+	// 格式化输出
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🔍 增强搜索结果 - %s\n", query))
+	sb.WriteString(fmt.Sprintf("🔍 增强搜索结果 - %s\n", args.SearchQuery))
 	sb.WriteString(strings.Repeat("=", 50) + "\n\n")
-	sb.WriteString(result.String())
+	sb.WriteString(result)
 	return sb.String(), nil
 }
 

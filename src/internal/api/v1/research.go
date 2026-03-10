@@ -471,6 +471,7 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 							"metadata":    metadata,
 						},
 					})
+					c.Writer.Flush() // Ensure completed event is flushed before closing
 					return false
 				default:
 					eventData := gin.H{

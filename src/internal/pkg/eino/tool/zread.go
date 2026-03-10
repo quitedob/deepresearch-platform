@@ -3,12 +3,9 @@
 package tool
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -24,9 +21,7 @@ const (
 
 // ZReadTool ZRead MCP 工具，提供开源仓库读取能力
 type ZReadTool struct {
-	apiKey  string
-	timeout time.Duration
-	client  *http.Client
+	mcpClient *MCPClient
 }
 
 // ZReadConfig ZRead 配置
@@ -41,9 +36,11 @@ func NewZReadTool(config ZReadConfig) *ZReadTool {
 		config.Timeout = 60 * time.Second
 	}
 	return &ZReadTool{
-		apiKey:  config.APIKey,
-		timeout: config.Timeout,
-		client:  &http.Client{Timeout: config.Timeout},
+		mcpClient: NewMCPClient(MCPClientConfig{
+			APIKey:  config.APIKey,
+			BaseURL: zreadMCPEndpoint,
+			Timeout: config.Timeout,
+		}),
 	}
 }
 
@@ -101,184 +98,71 @@ func (t *ZReadTool) InvokableRun(ctx context.Context, argumentsInJSON string, op
 		return "", fmt.Errorf("repo_name is required")
 	}
 
-	if t.apiKey == "" {
-		return "", fmt.Errorf("API key not configured for ZRead MCP")
-	}
+	// 根据操作类型构建参数
+	var toolName string
+	var arguments map[string]interface{}
 
 	switch args.Operation {
 	case "search_doc":
 		if args.Query == "" {
 			return "", fmt.Errorf("query is required for search_doc operation")
 		}
-		return t.searchDoc(ctx, args.RepoName, args.Query, args.Language)
+		toolName = "search_doc"
+		arguments = map[string]interface{}{
+			"repo_name": args.RepoName,
+			"query":     args.Query,
+			"language":  args.Language,
+		}
+		if args.Language == "" {
+			arguments["language"] = "zh"
+		}
+
 	case "read_file":
 		if args.FilePath == "" {
 			return "", fmt.Errorf("file_path is required for read_file operation")
 		}
-		return t.readFile(ctx, args.RepoName, args.FilePath)
+		toolName = "read_file"
+		arguments = map[string]interface{}{
+			"repo_name": args.RepoName,
+			"file_path": args.FilePath,
+		}
+
 	case "get_repo_structure":
-		return t.getRepoStructure(ctx, args.RepoName, args.DirPath)
+		toolName = "get_repo_structure"
+		arguments = map[string]interface{}{
+			"repo_name": args.RepoName,
+		}
+		if args.DirPath != "" {
+			arguments["dir_path"] = args.DirPath
+		}
+
 	default:
 		return "", fmt.Errorf("unknown operation: %s (supported: search_doc, read_file, get_repo_structure)", args.Operation)
 	}
-}
 
-
-// searchDoc 搜索仓库文档
-func (t *ZReadTool) searchDoc(ctx context.Context, repoName, query, language string) (string, error) {
-	if language == "" {
-		language = "zh"
-	}
-
-	reqBody := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "tools/call",
-		"params": map[string]interface{}{
-			"name": "search_doc",
-			"arguments": map[string]string{
-				"repo_name": repoName,
-				"query":     query,
-				"language":  language,
-			},
-		},
-	}
-
-	result, err := t.callMCP(ctx, reqBody)
+	// 使用 MCP 客户端调用工具
+	result, err := t.mcpClient.CallTool(ctx, toolName, arguments)
 	if err != nil {
-		return "", fmt.Errorf("search_doc failed: %w", err)
+		return "", err
 	}
 
+	// 格式化输出
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📚 仓库文档搜索结果 - %s\n", repoName))
-	sb.WriteString(fmt.Sprintf("🔍 查询: %s\n", query))
-	sb.WriteString(strings.Repeat("=", 50) + "\n\n")
-	sb.WriteString(result)
-	return sb.String(), nil
-}
-
-// readFile 读取仓库文件
-func (t *ZReadTool) readFile(ctx context.Context, repoName, filePath string) (string, error) {
-	reqBody := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "tools/call",
-		"params": map[string]interface{}{
-			"name": "read_file",
-			"arguments": map[string]string{
-				"repo_name": repoName,
-				"file_path": filePath,
-			},
-		},
-	}
-
-	result, err := t.callMCP(ctx, reqBody)
-	if err != nil {
-		return "", fmt.Errorf("read_file failed: %w", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📄 文件内容 - %s/%s\n", repoName, filePath))
-	sb.WriteString(strings.Repeat("=", 50) + "\n\n")
-	sb.WriteString(result)
-	return sb.String(), nil
-}
-
-// getRepoStructure 获取仓库结构
-func (t *ZReadTool) getRepoStructure(ctx context.Context, repoName, dirPath string) (string, error) {
-	args := map[string]string{
-		"repo_name": repoName,
-	}
-	if dirPath != "" {
-		args["dir_path"] = dirPath
-	}
-
-	reqBody := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "tools/call",
-		"params": map[string]interface{}{
-			"name":      "get_repo_structure",
-			"arguments": args,
-		},
-	}
-
-	result, err := t.callMCP(ctx, reqBody)
-	if err != nil {
-		return "", fmt.Errorf("get_repo_structure failed: %w", err)
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📁 仓库结构 - %s\n", repoName))
-	if dirPath != "" {
-		sb.WriteString(fmt.Sprintf("📂 目录: %s\n", dirPath))
-	}
-	sb.WriteString(strings.Repeat("=", 50) + "\n\n")
-	sb.WriteString(result)
-	return sb.String(), nil
-}
-
-// callMCP 调用 MCP 接口
-func (t *ZReadTool) callMCP(ctx context.Context, reqBody map[string]interface{}) (string, error) {
-	jsonBody, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", zreadMCPEndpoint, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", t.apiKey))
-
-	resp, err := t.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("MCP API failed (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	// 解析 JSON-RPC 响应
-	var mcpResp struct {
-		Result struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"result"`
-		Error *struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-
-	if err := json.Unmarshal(body, &mcpResp); err != nil {
-		return "", fmt.Errorf("failed to parse MCP response: %w", err)
-	}
-
-	if mcpResp.Error != nil {
-		return "", fmt.Errorf("MCP error (code %d): %s", mcpResp.Error.Code, mcpResp.Error.Message)
-	}
-
-	// 提取文本内容
-	var result strings.Builder
-	for _, content := range mcpResp.Result.Content {
-		if content.Type == "text" {
-			result.WriteString(content.Text)
+	switch args.Operation {
+	case "search_doc":
+		sb.WriteString(fmt.Sprintf("📚 仓库文档搜索结果 - %s\n", args.RepoName))
+		sb.WriteString(fmt.Sprintf("🔍 查询: %s\n", args.Query))
+	case "read_file":
+		sb.WriteString(fmt.Sprintf("📄 文件内容 - %s/%s\n", args.RepoName, args.FilePath))
+	case "get_repo_structure":
+		sb.WriteString(fmt.Sprintf("📁 仓库结构 - %s\n", args.RepoName))
+		if args.DirPath != "" {
+			sb.WriteString(fmt.Sprintf("📂 目录: %s\n", args.DirPath))
 		}
 	}
-
-	return result.String(), nil
+	sb.WriteString(strings.Repeat("=", 50) + "\n\n")
+	sb.WriteString(result)
+	return sb.String(), nil
 }
 
 var _ tool.InvokableTool = (*ZReadTool)(nil)

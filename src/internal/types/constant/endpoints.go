@@ -18,11 +18,12 @@ const (
 )
 
 // Zhipu MCP Tool Endpoints
+// MCP 工具使用 api.z.ai 端点，认证方式为 Bearer {api_key}
 const (
-	ZhipuChatCompletionsURL    = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-	ZhipuWebReaderMCPEndpoint  = "https://open.bigmodel.cn/api/mcp/web_reader/mcp"
-	ZhipuZReadMCPEndpoint      = "https://open.bigmodel.cn/api/mcp/zread/mcp"
-	ZhipuWebSearchPrimeMCPEndpoint = "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp"
+	ZhipuChatCompletionsURL        = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+	ZhipuWebReaderMCPEndpoint      = "https://api.z.ai/api/mcp/web_reader/mcp"
+	ZhipuZReadMCPEndpoint          = "https://api.z.ai/api/mcp/zread/mcp"
+	ZhipuWebSearchPrimeMCPEndpoint = "https://api.z.ai/api/mcp/web_search_prime/mcp"
 )
 
 // External API Endpoints

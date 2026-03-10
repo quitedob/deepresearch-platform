@@ -81,7 +81,7 @@ func DefaultToolsConfig() ToolsConfig {
 		WebSearchAPIKey:    "", // 需要从外部传入
 		ArxivMaxResults:    10,
 		WikipediaLanguage:  "zh",
-		Timeout:            90 * time.Second, // 从30秒提升到90秒，避免联网搜索+LLM生成链路超时
+		Timeout:            900 * time.Second, // 从30秒提升到90秒，避免联网搜索+LLM生成链路超时
 		EnableReliability:  true,  // 默认启用可靠性
 		EnableZRead:        true,  // 默认启用 ZRead MCP
 		EnableWebReader:    true,  // 默认启用 Web Reader MCP
@@ -213,6 +213,15 @@ func CreateZReadTool(apiKey string) InvokableTool {
 // apiKey 必须传入，不能为空
 func CreateWebReaderTool(apiKey string) InvokableTool {
 	return einotool.NewWebReaderTool(einotool.WebReaderConfig{
+		APIKey:  apiKey,
+		Timeout: 30 * time.Second,
+	})
+}
+
+// CreateWebSearchPrimeTool 创建 Web Search Prime MCP 工具（增强版网络搜索）
+// apiKey 必须传入，不能为空
+func CreateWebSearchPrimeTool(apiKey string) InvokableTool {
+	return einotool.NewWebSearchPrimeTool(einotool.WebSearchPrimeConfig{
 		APIKey:  apiKey,
 		Timeout: 30 * time.Second,
 	})
@@ -403,25 +412,23 @@ func (s *LLMScheduler) StreamWithFallback(ctx context.Context, messages []*Messa
 	}
 
 	// Create output channel with buffer
-	ch := make(chan *StreamResponse, 100)
+	ch := make(chan *StreamResponse, 50)
 
 	go func() {
 		defer close(ch)
 		for {
-			// 检查上下文是否已取消
+			// 检查上下文是否已取消（优先检查，避免阻塞在 Recv）
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
-			
+
 			msg, err := streamReader.Recv()
 			if err != nil {
-				// EOF 或其他错误都会导致退出
 				return
 			}
-			
-			// 尝试发送，如果通道已满或上下文取消则退出
+
 			select {
 			case ch <- &StreamResponse{Content: msg.Content}:
 			case <-ctx.Done():

@@ -40,9 +40,17 @@ func NewPaperEventStream(bufferSize int) *PaperEventStream {
 }
 
 // Subscribe 订阅事件流
+// 添加自动清理机制，防止客户端异常断开导致 channel 泄漏
 func (s *PaperEventStream) Subscribe(sessionID string) chan *response.PaperProgressEvent {
 	ch := make(chan *response.PaperProgressEvent, s.bufferSize)
 	s.streams.Store(sessionID, ch)
+
+	// 35分钟后自动清理（论文生成超时30分钟 + 5分钟缓冲）
+	go func() {
+		time.Sleep(35 * time.Minute)
+		s.Unsubscribe(sessionID)
+	}()
+
 	return ch
 }
 
@@ -486,6 +494,7 @@ func (s *PaperService) RegenerateChapter(ctx context.Context, sessionID, chapter
 	go func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
+		defer s.paperAgent.ClearCallbacks() // 防止回调累积
 
 		s.logger.Info("重新生成章节",
 			zap.String("session_id", sessionID),

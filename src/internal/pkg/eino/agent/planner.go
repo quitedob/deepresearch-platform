@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -82,7 +83,11 @@ func (p *ResearchPlanner) CreatePlan(ctx context.Context, query string) (*Enhanc
 		{Role: schema.User, Content: prompt},
 	}
 
-	response, err := p.chatModel.Generate(ctx, messages)
+	// 为 LLM 调用添加超时控制
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	response, err := p.chatModel.Generate(callCtx, messages)
 	if err != nil {
 		return p.defaultPlan(query), nil
 	}

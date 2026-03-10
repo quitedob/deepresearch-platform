@@ -113,18 +113,27 @@ func (s *ResearchService) ExecuteResearchWithConfig(sessionID, query, researchTy
 	}
 
 	go func() {
-		defer s.untrackSession(sessionID)
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("[ERROR] panic in research goroutine (session=%s): %v\n", sessionID, r)
+				if s.eventStream != nil {
+					s.eventStream.Send(sessionID, &ResearchEvent{
+						Type:      "error",
+						Message:   fmt.Sprintf("研究任务异常终止: %v", r),
+						Timestamp: time.Now(),
+					})
+				}
+			}
+			s.untrackSession(sessionID)
+		}()
 		s.executeResearch(ctx, session)
 	}()
 }
 
 // executeResearch 执行研究
 func (s *ResearchService) executeResearch(ctx context.Context, session *models.ResearchSession) {
-	fmt.Printf("[DEBUG] executeResearch 开始: session_id=%s, query=%s, type=%s\n", session.ID, session.Query, session.ResearchType)
-
 	// 优先使用并行编排器（deep/comprehensive类型）
 	useParallel := s.orchestrator != nil && (session.ResearchType == "deep" || session.ResearchType == "comprehensive")
-	fmt.Printf("[DEBUG] useParallel=%v, orchestrator=%v\n", useParallel, s.orchestrator != nil)
 
 	if !useParallel && s.agent == nil {
 		if s.eventStream != nil {
@@ -133,14 +142,13 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 				Message:   "Research agent not configured",
 				Timestamp: time.Now(),
 			})
+			s.eventStream.CloseStream(session.ID)
 		}
 		return
 	}
 
 	// 创建进度回调
 	progressCallback := func(event *agent.ProgressEvent) {
-		fmt.Printf("[DEBUG] 进度回调: stage=%s, progress=%.2f, message=%s\n", event.Stage, event.Progress, event.Message)
-
 		if s.repo != nil {
 			_ = s.repo.UpdateSessionStatus(ctx, session.ID, event.Stage, event.Progress)
 		}
@@ -176,6 +184,7 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 					Message:   "Research agent not configured",
 					Timestamp: time.Now(),
 				})
+				s.eventStream.CloseStream(session.ID)
 			}
 			return
 		}
@@ -195,6 +204,7 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 				Message:   fmt.Sprintf("Research failed: %v", err),
 				Timestamp: time.Now(),
 			})
+			s.eventStream.CloseStream(session.ID)
 		}
 		return
 	}
@@ -216,6 +226,11 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 
 	// 发送完成事件
 	s.sendCompletedEvent(session, result)
+
+	// 关闭 EventStream，释放 channel 资源
+	if s.eventStream != nil {
+		s.eventStream.CloseStream(session.ID)
+	}
 }
 
 // saveResearchResult 保存研究结果到数据库

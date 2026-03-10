@@ -163,7 +163,6 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 		// 从用户提示中提取搜索关键词
 		searchQuery := extractSearchQuery(req.Prompt)
 		if searchQuery != "" {
-			fmt.Printf("[AI出题] 开始网络搜索: %s\n", searchQuery)
 			// 搜索使用独立的超时上下文，避免取消影响后续LLM调用
 			searchCtx, searchCancel := context.WithTimeout(context.Background(), 20*time.Second)
 			searchArgs, _ := json.Marshal(map[string]string{"query": searchQuery})
@@ -171,11 +170,9 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 			searchCancel()
 			
 			if err != nil {
-				// 搜索失败时记录日志但继续生成题目
-				fmt.Printf("[AI出题] 网络搜索失败（将继续生成题目）: %v\n", err)
+				// 搜索失败时继续生成题目
 			} else if searchResult != "" {
 				searchContext = searchResult
-				fmt.Printf("[AI出题] 网络搜索成功，获取到 %d 字符的内容\n", len(searchResult))
 			}
 		}
 	}
@@ -220,9 +217,6 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 	var result *eino.Message
 	var err error
 
-	fmt.Printf("[AI出题] 开始调用LLM: provider=%s, model=%s\n", provider, modelName)
-	startTime := time.Now()
-
 	switch provider {
 	case "zhipu":
 		result, err = a.llmScheduler.ExecuteWithJSONMode(ctx, messages, modelName)
@@ -233,10 +227,7 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 		result, err = a.llmScheduler.ExecuteWithFallback(ctx, messages, modelName)
 	}
 
-	fmt.Printf("[AI出题] LLM调用完成，耗时: %v\n", time.Since(startTime))
-
 	if err != nil {
-		fmt.Printf("[AI出题] LLM调用失败: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   "生成失败: " + err.Error(),

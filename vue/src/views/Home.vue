@@ -607,6 +607,9 @@ const handleSendResearch = async (text) => {
       const MAX_RECONNECT_ATTEMPTS = 3;
       const RECONNECT_DELAY_MS = 2000;
 
+      // Use a mutable ref so reconnection can swap the active EventSource
+      let activeEventSource = eventSource;
+
       eventSource.onerror = (error) => {
         console.error('SSE 连接错误:', error);
         
@@ -623,22 +626,25 @@ const handleSendResearch = async (text) => {
           
           // 延迟后尝试重连
           setTimeout(() => {
-            if (chatStore.isTyping && eventSource.readyState === EventSource.CLOSED) {
-              // 创建新的EventSource连接（带token）
+            if (chatStore.isTyping && activeEventSource.readyState === EventSource.CLOSED) {
+              // Close old connection cleanly
+              activeEventSource.close();
+              
+              // Create a fresh EventSource connection
               const reconnectToken = getAuthToken();
               const newEventSource = new EventSource(
                 `${API_BASE_URL}/research/stream/${researchResponse.session_id}?token=${encodeURIComponent(reconnectToken)}`
               );
-              // 复制事件处理器
-              newEventSource.onmessage = eventSource.onmessage;
-              newEventSource.onerror = eventSource.onerror;
-              // 更新引用
-              Object.assign(eventSource, newEventSource);
+              // Re-attach handlers to the new connection
+              newEventSource.onmessage = activeEventSource.onmessage;
+              newEventSource.onerror = activeEventSource.onerror;
+              // Replace the active reference
+              activeEventSource = newEventSource;
             }
           }, RECONNECT_DELAY_MS);
         } else {
           // 超过重连次数或已停止，关闭连接
-          eventSource.close();
+          activeEventSource.close();
           
           chatStore.updateMessageContent({
             messageId: assistantMessageId,

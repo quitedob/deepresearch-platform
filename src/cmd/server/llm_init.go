@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-
+	"strings"
 	"github.com/ai-research-platform/internal/types/constant"
 	"github.com/cloudwego/eino-ext/components/model/deepseek"
 	"github.com/cloudwego/eino-ext/components/model/ollama"
@@ -87,19 +87,29 @@ func createOpenRouterModel(apiKey, baseURL, modelName string) (model.ChatModel, 
 
 // createOpenAICompatibleModel 创建 OpenAI兼容 ChatModel
 // 用于 GLM Coding Plan 等 OpenAI 兼容端点
+// 注意：如果使用智谱 API Key，需要先转换成 JWT Token
 func createOpenAICompatibleModel(apiKey, baseURL, modelName string) (model.ChatModel, error) {
 	ctx := context.Background()
-	
+
+	// 检查是否是智谱 API Key 格式（id.secret）
+	if len(apiKey) > 0 && strings.Count(apiKey, ".") == 1 {
+		// 使用智谱 JWT Token
+		jwtToken := generateZhipuToken(apiKey)
+		if jwtToken != "" {
+			apiKey = jwtToken
+		}
+	}
+
 	config := &openai.ChatModelConfig{
 		APIKey:  apiKey,
 		BaseURL: baseURL,
 		Model:   modelName,
 	}
-	
+
 	chatModel, err := openai.NewChatModel(ctx, config)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return chatModel, nil
 }

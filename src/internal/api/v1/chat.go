@@ -917,10 +917,12 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 		modelName = constant.DefaultModel
 	}
 
-	// 1. 使用 WebSearchTool 进行网络搜索
-	webSearchTool := eino.CreateWebSearchTool(api.toolsAPIKey)
-	searchArgs := fmt.Sprintf(`{"query": "%s"}`, req.Message)
-	searchResult, searchErr := webSearchTool.InvokableRun(c.Request.Context(), searchArgs)
+	// 1. 使用 Web Search Prime MCP 进行网络搜索（增强版，走 api.z.ai）
+	webSearchTool := eino.CreateWebSearchPrimeTool(api.toolsAPIKey)
+	searchArgs := fmt.Sprintf(`{"search_query": "%s"}`, req.Message)
+	searchCtx, searchCancel := context.WithTimeout(context.Background(), 900*time.Second)
+	searchResult, searchErr := webSearchTool.InvokableRun(searchCtx, searchArgs)
+	searchCancel()
 	
 	// 2. 构建包含搜索结果的提示词
 	var searchPrompt string

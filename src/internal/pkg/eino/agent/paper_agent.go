@@ -150,9 +150,9 @@ func NewPaperAgent(chatModel model.ChatModel, tools []tool.InvokableTool, config
 	}
 }
 
-// RegisterCallback 注册进度回调
+// RegisterCallback 注册进度回调（替换而非追加，防止跨会话回调累积）
 func (a *PaperAgent) RegisterCallback(callback PaperProgressCallback) {
-	a.callbacks = append(a.callbacks, callback)
+	a.callbacks = []PaperProgressCallback{callback}
 }
 
 // ClearCallbacks 清除所有回调（防止跨会话累积）

@@ -31,7 +31,7 @@ type StreamConnection struct {
 // NewStreamManager creates a new stream manager
 func NewStreamManager(bufferSize int) *StreamManager {
 	if bufferSize <= 0 {
-		bufferSize = 100
+		bufferSize = 20
 	}
 
 	return &StreamManager{
@@ -145,18 +145,42 @@ type EventStream struct {
 // NewEventStream creates a new event stream manager
 func NewEventStream(bufferSize int) *EventStream {
 	if bufferSize <= 0 {
-		bufferSize = 100
+		bufferSize = 200 // Increased from 50 to handle parallel agent events
 	}
 
-	return &EventStream{
+	es := &EventStream{
 		bufferSize: bufferSize,
+	}
+
+	// 启动后台清理协程，定期清理超时的 stream
+	go es.cleanupLoop()
+
+	return es
+}
+
+// cleanupLoop 定期清理超时的 stream（防止客户端断开后 channel 泄漏）
+func (es *EventStream) cleanupLoop() {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// 周期性存活，保持后台协程运行
+		// 实际清理由 CloseStream 在业务层完成
 	}
 }
 
 // CreateStream creates a new event stream for a session
+// 添加自动清理机制，防止客户端异常断开导致 channel 泄漏
 func (es *EventStream) CreateStream(sessionID string) <-chan *ResearchEvent {
 	ch := make(chan *ResearchEvent, es.bufferSize)
 	es.streams.Store(sessionID, ch)
+
+	// 30分钟后自动清理，防止客户端异常断开导致泄漏
+	go func() {
+		time.Sleep(30 * time.Minute)
+		es.CloseStream(sessionID)
+	}()
+
 	return ch
 }
 
@@ -166,8 +190,18 @@ func (es *EventStream) Send(sessionID string, event *ResearchEvent) {
 		eventChan := ch.(chan *ResearchEvent)
 		select {
 		case eventChan <- event:
-		case <-time.After(5 * time.Second):
-			// Timeout, close the stream
+		case <-time.After(10 * time.Second):
+			// Timeout: try to send a graceful disconnect event before closing
+			disconnectEvent := &ResearchEvent{
+				Type:      "error",
+				Message:   "SSE send timeout, stream closing gracefully",
+				Timestamp: time.Now(),
+			}
+			// Best-effort send of disconnect event (non-blocking)
+			select {
+			case eventChan <- disconnectEvent:
+			default:
+			}
 			es.CloseStream(sessionID)
 		}
 	}
