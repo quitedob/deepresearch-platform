@@ -14,10 +14,12 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 const (
-	zreadMCPEndpoint = "https://open.bigmodel.cn/api/mcp/zread/mcp"
+	zreadMCPEndpoint = constant.ZhipuZReadMCPEndpoint
 )
 
 // ZReadTool ZRead MCP 工具，提供开源仓库读取能力

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/ai-research-platform/internal/types/constant"
 	"github.com/cloudwego/eino-ext/components/model/deepseek"
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino-ext/components/model/openai"
@@ -67,7 +68,7 @@ func createOpenRouterModel(apiKey, baseURL, modelName string) (model.ChatModel, 
 	ctx := context.Background()
 	
 	if baseURL == "" {
-		baseURL = "https://openrouter.ai/api/v1"
+		baseURL = constant.BaseURLOpenRouter
 	}
 	
 	config := &openai.ChatModelConfig{

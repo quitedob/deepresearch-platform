@@ -13,6 +13,8 @@ type User struct {
     Password  string         `gorm:"not null" json:"-"` // bcrypt hashed, never expose in JSON
     FullName  *string        `json:"full_name,omitempty"`
     Phone     *string        `json:"phone,omitempty"`
+    Avatar    *string        `gorm:"type:text" json:"avatar,omitempty"`
+    Bio       *string        `gorm:"type:varchar(500)" json:"bio,omitempty"`
     Role      string         `gorm:"default:'user'" json:"role"`
     Status    string         `gorm:"default:'active'" json:"status"`
     IsAdmin   bool           `gorm:"default:false" json:"is_admin"`

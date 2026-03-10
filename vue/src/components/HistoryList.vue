@@ -461,4 +461,59 @@ onMounted(async () => {
 .history-section::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.4);
 }
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .history-section {
+    padding: 16px 12px;
+  }
+
+  .history-header {
+    margin-bottom: 16px;
+  }
+
+  .history-item {
+    padding: 12px;
+    min-height: 44px;
+  }
+
+  .item-actions {
+    opacity: 1; /* 移动端始终显示操作按钮 */
+  }
+
+  .item-action {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 8px;
+  }
+
+  .action-button {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 8px;
+  }
+
+  .item-title {
+    font-size: 14px;
+  }
+
+  .item-preview {
+    font-size: 12px;
+    -webkit-line-clamp: 1;
+  }
+
+  .item-meta {
+    gap: 8px;
+    font-size: 10px;
+  }
+
+  .empty-state {
+    padding: 30px 16px;
+  }
+
+  .start-chat-button {
+    min-height: 44px;
+    padding: 12px 24px;
+  }
+}
 </style>

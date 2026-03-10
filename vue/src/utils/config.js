@@ -36,6 +36,13 @@ export const RESEARCH_CONFIG = {
   POLL_INTERVAL_MS: 2000,       // 轮询间隔2秒
 }
 
+// 默认模型/提供商
+export const DEFAULT_MODEL = 'deepseek-chat'
+export const DEFAULT_PROVIDER = 'deepseek'
+
+// 上下文刷新间隔
+export const CONTEXT_REFRESH_INTERVAL = 30000 // 30秒
+
 // 本地存储键名
 export const STORAGE_KEYS = {
   AUTH_TOKEN: 'auth_token',

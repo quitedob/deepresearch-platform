@@ -16,6 +16,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // ZhipuProvider 智谱AI LLM提供商（自研实现，暂时不使用）
@@ -31,15 +34,27 @@ func NewZhipuProvider(config ChatModelConfig) (*ZhipuProvider, error) {
 		return nil, fmt.Errorf("Zhipu AI API key is required")
 	}
 	if config.BaseURL == "" {
-		config.BaseURL = "https://open.bigmodel.cn"
+		config.BaseURL = constant.BaseURLZhipu
 	}
 	if config.Model == "" {
 		config.Model = "glm-4.5-air" // 默认使用高性价比模型
 	}
 
+	timeout := 60 * time.Second
+	if config.Timeout > 0 {
+		timeout = time.Duration(config.Timeout) * time.Second
+	}
+
 	return &ZhipuProvider{
 		config: config,
-		client: &http.Client{},
+		client: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 	}, nil
 }
 
@@ -197,6 +212,13 @@ func (p *ZhipuProvider) StreamGenerate(ctx context.Context, messages []Message) 
 
 		reader := bufio.NewReader(resp.Body)
 		for {
+			// 检查上下文是否已取消，及时退出
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {

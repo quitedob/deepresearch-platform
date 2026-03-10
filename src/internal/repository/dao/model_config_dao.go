@@ -141,3 +141,15 @@ func (d *ModelConfigDAO) CreateModelConfig(ctx context.Context, config *model.Mo
 func (d *ModelConfigDAO) CreateProviderConfig(ctx context.Context, config *model.ProviderConfig) error {
 	return d.db.WithContext(ctx).Create(config).Error
 }
+
+// IsModelEnabled 检查模型是否启用
+func (d *ModelConfigDAO) IsModelEnabled(ctx context.Context, provider, modelName string) (bool, error) {
+	var count int64
+	err := d.db.WithContext(ctx).Model(&model.ModelConfig{}).
+		Where("provider = ? AND model_name = ? AND is_enabled = ?", provider, modelName, true).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

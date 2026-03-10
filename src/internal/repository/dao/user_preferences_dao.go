@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/ai-research-platform/internal/types/constant"
 	"gorm.io/gorm"
 )
 
@@ -50,8 +51,8 @@ func (d *UserPreferencesDAO) GetOrCreate(ctx context.Context, userID string) (*m
 			UserID:              userID,
 			Theme:               "light",
 			Language:            "zh",
-			DefaultLLMProvider:  "deepseek",
-			DefaultModel:        "deepseek-chat",
+			DefaultLLMProvider:  constant.DefaultProvider,
+			DefaultModel:        constant.DefaultModel,
 			StreamEnabled:       true,
 			NotificationEnabled: true,
 			AutoSaveEnabled:     true,

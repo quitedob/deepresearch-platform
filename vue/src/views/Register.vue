@@ -159,6 +159,8 @@ const doRegister = async () => {
     const storage = rememberMe.value ? localStorage : sessionStorage;
     storage.setItem('auth_token', data.access_token);
     storage.setItem('user', JSON.stringify(data.user));
+    // 注册成功即视为完成欢迎流程，防止路由守卫死循环
+    localStorage.setItem('welcome_completed', 'true');
     console.log('[Register] 用户信息已保存到', rememberMe.value ? 'localStorage' : 'sessionStorage');
 
     const redirect = router.currentRoute.value.query?.redirect || '/';

@@ -1510,6 +1510,61 @@ const formatShareExpiry = (expiryString) => {
 .share-info strong {
   color: var(--text-primary);
 }
+
+/* 移动端消息布局优化 */
+@media (max-width: 768px) {
+  .message-wrapper {
+    gap: 8px;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+  }
+
+  .content-container {
+    max-width: 90%;
+  }
+
+  .message-bubble {
+    padding: 10px 14px;
+    font-size: 14px;
+    border-radius: 14px;
+  }
+
+  .message-actions {
+    visibility: visible;
+    opacity: 1;
+    flex-wrap: wrap;
+  }
+
+  .message-actions button {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px;
+  }
+
+  /* 举报/分享弹窗移动端适配 */
+  .report-modal,
+  .share-modal {
+    width: 92vw;
+    max-width: 400px;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .content-container {
+    max-width: 95%;
+  }
+
+  .message-bubble {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+}
 </style>
 <style>
 /* Global styles for rendered markdown - Enhanced */
@@ -1628,4 +1683,37 @@ const formatShareExpiry = (expiryString) => {
 /* HR & Images */
 .message-text hr { border: none; height: 1px; background: var(--border-color); margin: 16px 0; }
 .message-text img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
+
+/* 移动端代码块和内容优化 */
+@media (max-width: 768px) {
+  .message-text pre {
+    padding: 12px;
+    font-size: 12px;
+    border-radius: 8px;
+    max-width: calc(100vw - 100px);
+  }
+
+  .message-text pre code {
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  .copy-code-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    min-width: 44px;
+    min-height: 32px;
+  }
+
+  .message-text table {
+    display: block;
+    overflow-x: auto;
+    max-width: calc(100vw - 100px);
+  }
+
+  .latex-block, .svg-container, .mermaid {
+    max-width: calc(100vw - 100px);
+  }
+}
 </style>

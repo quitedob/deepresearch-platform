@@ -37,7 +37,7 @@
           <button @click="startExploring" class="btn-launch">
             <span class="btn-glow"></span>
             <img src="@/assets/images/rocket-launch-3d.png" alt="" class="btn-icon-3d" />
-            <span class="btn-text">开始探索</span>
+            <span class="btn-text">免费注册，立即体验</span>
             <span class="btn-arrow">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                 <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -46,7 +46,9 @@
           </button>
           
           <div class="cta-secondary">
-            <router-link to="/login" class="link-login">已有账号？立即登录</router-link>
+            <a @click.prevent="skipToLogin" href="#" class="link-login">已有账号？立即登录</a>
+            <span class="cta-divider">·</span>
+            <a @click.prevent="skipToHome" href="#" class="link-skip">跳过引导</a>
           </div>
         </div>
       </section>
@@ -118,7 +120,20 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 const startExploring = () => {
+  // 设置欢迎流程完成标志，防止路由守卫死循环
+  localStorage.setItem('welcome_completed', 'true')
   router.push('/register')
+}
+
+const skipToLogin = () => {
+  localStorage.setItem('welcome_completed', 'true')
+  router.push('/login')
+}
+
+const skipToHome = () => {
+  localStorage.setItem('welcome_completed', 'true')
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+  router.push(token ? '/home' : '/login')
 }
 </script>
 
@@ -423,6 +438,7 @@ const startExploring = () => {
   font-size: 0.95rem;
   transition: color 0.2s;
   position: relative;
+  cursor: pointer;
 }
 
 .link-login::after {
@@ -443,6 +459,26 @@ const startExploring = () => {
 
 .link-login:hover::after {
   transform: scaleX(1);
+}
+
+.cta-divider {
+  color: var(--text-secondary);
+  opacity: 0.4;
+  margin: 0 0.25rem;
+}
+
+.link-skip {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.link-skip:hover {
+  color: var(--accent-cyan);
+  opacity: 1;
 }
 
 .btn-icon-3d {

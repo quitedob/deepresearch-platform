@@ -253,6 +253,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ragAPI } from '@/services/api'
+import { formatRelativeTime } from '@/utils/timeFormat'
 
 // 响应式数据
 const researchQuery = ref('')
@@ -321,109 +322,72 @@ const startResearch = async () => {
   researchProgress.value = 0
 
   try {
-    // 模拟研究进度
-    const progressInterval = setInterval(() => {
-      if (researchProgress.value < 90) {
-        researchProgress.value += Math.random() * 15
+    // 使用实际 API 启动研究
+    const response = await ragAPI.startResearch({
+      query: researchQuery.value,
+      research_type: researchType.value,
+      depth: researchDepth.value,
+      sources: Object.entries(dataSources.value)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key)
+    })
+
+    if (response && response.success) {
+      researchStatus.value = 'analyzing'
+      researchProgress.value = 50
+
+      // 轮询获取结果
+      const sessionId = response.session_id
+      let attempts = 0
+      const maxAttempts = 60 // 最多等待 2 分钟
+
+      const pollResult = async () => {
+        while (attempts < maxAttempts) {
+          attempts++
+          await sleep(2000)
+
+          try {
+            const result = await ragAPI.getResearchResult(sessionId)
+            if (result && result.status === 'completed') {
+              researchResults.value = {
+                summary: result.report_text || '研究完成',
+                key_findings: result.key_findings || [],
+                recommendations: result.recommendations || [],
+                sections: result.sections || [],
+                sources: result.sources || [],
+                visualizations: []
+              }
+              researchProgress.value = 100
+              researchStatus.value = 'completed'
+              addToHistory()
+              return
+            } else if (result && result.status === 'failed') {
+              throw new Error(result.error || '研究失败')
+            }
+
+            // 更新进度
+            researchProgress.value = Math.min(90, 50 + attempts)
+          } catch (pollError) {
+            if (pollError.message !== '研究失败') {
+              console.warn('轮询研究结果失败:', pollError)
+            } else {
+              throw pollError
+            }
+          }
+        }
+        throw new Error('研究超时，请稍后查看结果')
       }
-    }, 500)
 
-    // 模拟API调用
-    await simulateResearch()
-
-    clearInterval(progressInterval)
-    researchProgress.value = 100
-    researchStatus.value = 'completed'
-
-    // 添加到历史记录
-    addToHistory()
+      await pollResult()
+    } else {
+      throw new Error(response?.error || '启动研究失败')
+    }
   } catch (error) {
     researchStatus.value = 'error'
     console.error('研究失败:', error)
+    alert(`研究失败: ${error.message}`)
   } finally {
     isResearching.value = false
-  }
-}
-
-const simulateResearch = async () => {
-  // 模拟搜索阶段
-  researchStatus.value = 'searching'
-  await sleep(2000)
-
-  // 模拟分析阶段
-  researchStatus.value = 'analyzing'
-  await sleep(3000)
-
-  // 模拟生成报告阶段
-  researchStatus.value = 'generating'
-  await sleep(2000)
-
-  // 生成模拟结果
-  researchResults.value = generateMockResults()
-}
-
-const generateMockResults = () => {
-  return {
-    summary: `<p>基于对"<strong>${researchQuery.value}</strong>"的深度研究，我们发现了以下关键信息：</p>
-<p>这是一个重要的研究领域，涉及多个方面的考量。通过综合分析现有资料和数据，我们可以得出以下结论。</p>`,
-    key_findings: [
-      '该主题具有广泛的研究价值和实际应用前景',
-      '相关技术正在快速发展，值得关注最新进展',
-      '市场需求持续增长，商业潜力巨大',
-      '跨学科融合趋势明显，需要综合多领域知识'
-    ],
-    recommendations: [
-      '持续关注该领域的技术发展和市场动态',
-      '加强与相关机构的合作与交流',
-      '建立完善的知识管理体系',
-      '制定长远的发展战略规划'
-    ],
-    sections: [
-      {
-        title: '背景分析',
-        content: `<p>随着科技的不断发展，${researchQuery.value}已成为一个备受关注的热点话题。本节将从多个角度分析其背景和重要性。</p>`
-      },
-      {
-        title: '现状评估',
-        content: `<p>当前${researchQuery.value}的发展状况总体良好，但仍面临一些挑战和机遇。我们需要客观评估现状，为未来发展指明方向。</p>`
-      },
-      {
-        title: '发展趋势',
-        content: `<p>展望未来，${researchQuery.value}将呈现出以下发展趋势：技术融合加速、应用场景拓展、产业生态完善等。</p>`
-      }
-    ],
-    sources: [
-      {
-        id: 1,
-        title: '相关研究报告',
-        type: '学术论文',
-        summary: '详细分析了该领域的发展现状和未来趋势',
-        relevance: 95,
-        url: '#'
-      },
-      {
-        id: 2,
-        title: '行业分析',
-        type: '行业报告',
-        summary: '提供了市场规模和竞争格局的深入分析',
-        relevance: 88,
-        url: '#'
-      }
-    ],
-    visualizations: [
-      {
-        id: 1,
-        title: '发展趋势图',
-        type: '趋势图',
-        description: '展示该领域的发展趋势和关键节点'
-      },
-      {
-        id: 2,
-        title: '市场份额分布',
-        type: '饼图',
-        description: '各细分领域的市场占比情况'
-      }
-    ]
   }
 }
 
@@ -439,9 +403,13 @@ const createNewResearch = () => {
 const loadResearchList = async () => {
   loading.value = true
   try {
-    // 这里应该调用实际的API
-    await sleep(1000)
-    // researchHistory.value = await ragAPI.getResearchHistory()
+    const response = await ragAPI.getResearchHistory()
+    if (response && response.data) {
+      researchHistory.value = response.data.map(item => ({
+        ...item,
+        timestamp: new Date(item.created_at || item.timestamp)
+      }))
+    }
   } catch (error) {
     console.error('加载研究列表失败:', error)
   } finally {
@@ -543,18 +511,7 @@ const addToHistory = () => {
   }
 }
 
-const formatTime = (timestamp) => {
-  const now = new Date()
-  const diff = now - timestamp
-  const minutes = Math.floor(diff / (1000 * 60))
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  return `${days}天前`
-}
+const formatTime = (timestamp) => formatRelativeTime(timestamp)
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 

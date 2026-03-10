@@ -12,6 +12,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // WikipediaTool Wikipedia 查询工具
@@ -90,7 +92,7 @@ func (t *WikipediaTool) InvokableRun(ctx context.Context, argumentsInJSON string
 }
 
 func (t *WikipediaTool) getPageContent(ctx context.Context, pageTitle string, language string) (string, error) {
-	apiURL := fmt.Sprintf("https://%s.wikipedia.org/w/api.php", language)
+	apiURL := fmt.Sprintf(constant.WikipediaAPITemplate, language)
 	params := url.Values{}
 	params.Set("action", "query")
 	params.Set("prop", "extracts|info")

@@ -9,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // OpenRouterProvider OpenRouter LLM提供商
@@ -24,15 +27,27 @@ func NewOpenRouterProvider(config ChatModelConfig) (*OpenRouterProvider, error) 
 		return nil, fmt.Errorf("OpenRouter API key is required")
 	}
 	if config.BaseURL == "" {
-		config.BaseURL = "https://openrouter.ai/api/v1"
+		config.BaseURL = constant.BaseURLOpenRouter
 	}
 	if config.Model == "" {
 		config.Model = "openai/gpt-4o" // 默认模型
 	}
 
+	timeout := 60 * time.Second
+	if config.Timeout > 0 {
+		timeout = time.Duration(config.Timeout) * time.Second
+	}
+
 	return &OpenRouterProvider{
 		config: config,
-		client: &http.Client{},
+		client: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 	}, nil
 }
 
@@ -114,8 +129,8 @@ func (p *OpenRouterProvider) Generate(ctx context.Context, messages []Message) (
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
-	req.Header.Set("HTTP-Referer", "https://ai-research-platform.local")
-	req.Header.Set("X-Title", "AI Research Platform")
+	req.Header.Set("HTTP-Referer", constant.OpenRouterReferer)
+	req.Header.Set("X-Title", constant.OpenRouterTitle)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -181,8 +196,8 @@ func (p *OpenRouterProvider) StreamGenerate(ctx context.Context, messages []Mess
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.config.APIKey)
-	req.Header.Set("HTTP-Referer", "https://ai-research-platform.local")
-	req.Header.Set("X-Title", "AI Research Platform")
+	req.Header.Set("HTTP-Referer", constant.OpenRouterReferer)
+	req.Header.Set("X-Title", constant.OpenRouterTitle)
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := p.client.Do(req)
@@ -204,6 +219,12 @@ func (p *OpenRouterProvider) StreamGenerate(ctx context.Context, messages []Mess
 
 		reader := bufio.NewReader(resp.Body)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {

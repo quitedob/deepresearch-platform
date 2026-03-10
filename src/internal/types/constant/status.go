@@ -26,9 +26,22 @@ const (
 
 // 研究类型
 const (
-    ResearchTypeDeep     = "deep"
-    ResearchTypeQuick    = "quick"
-    ResearchTypeAcademic = "academic"
+    ResearchTypeDeep          = "deep"
+    ResearchTypeQuick         = "quick"
+    ResearchTypeAcademic      = "academic"
+    ResearchTypeComprehensive = "comprehensive"
+)
+
+// 用户状态
+const (
+    UserStatusActive = "active"
+    UserStatusBanned = "banned"
+)
+
+// 会员类型
+const (
+    MembershipFree    = "free"
+    MembershipPremium = "premium"
 )
 
 // 用户角色

@@ -119,12 +119,8 @@ router.beforeEach((to) => {
     }
 
     // 欢迎流程检查：新用户首次登录后应先完成欢迎流程
+    // 注意：welcome_completed 标志在 Welcome.vue、Login.vue、Register.vue 中设置
     if (token && !hasCompletedWelcome && to.path !== '/welcome') {
-        return { path: '/welcome' };
-    }
-
-    // 主页特殊处理：确保欢迎流程逻辑正确执行
-    if (to.path === '/home' && token && !hasCompletedWelcome) {
         return { path: '/welcome' };
     }
 

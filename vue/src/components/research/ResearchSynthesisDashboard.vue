@@ -518,8 +518,8 @@ export default {
           include_conclusions: true
         }
 
-        // Generate synthesis (this would call the actual API)
-        const synthesis = await mockGenerateSynthesis(synthesisData)
+        // Generate synthesis via research store API
+        const synthesis = await researchStore.generateSynthesis(synthesisData)
         currentSynthesis.value = synthesis
 
         notificationStore.showSuccess('Research synthesis generated successfully')
@@ -569,115 +569,6 @@ export default {
     const shareSynthesis = () => {
       // Implement sharing functionality
       notificationStore.showInfo('Sharing functionality coming soon')
-    }
-
-    // Mock function to generate synthesis data
-    const mockGenerateSynthesis = async (config) => {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-
-      return {
-        id: `synthesis_${Date.now()}`,
-        title: `Research Synthesis - ${config.synthesis_type}`,
-        description: `Comprehensive synthesis of research findings with ${config.detail_level} detail level`,
-        generated_at: new Date().toISOString(),
-        confidence_level: 0.85,
-        quality_score: 0.88,
-        data_quality: 0.82,
-        coverage_score: 0.90,
-        reliability_score: 0.86,
-        sources_analyzed: 15,
-        themes: [
-          {
-            name: 'Innovation',
-            frequency: 8,
-            strength: 'high',
-            description: 'Emerging trends and innovative approaches in the research domain'
-          },
-          {
-            name: 'Methodology',
-            frequency: 6,
-            strength: 'medium',
-            description: 'Research methods and analytical approaches used'
-          },
-          {
-            name: 'Impact',
-            frequency: 5,
-            strength: 'high',
-            description: 'Significant findings and their potential impact'
-          }
-        ],
-        key_insights: [
-          {
-            type: 'strategic',
-            title: 'Emerging Market Opportunities',
-            description: 'Research indicates significant untapped potential in emerging markets with projected growth rates exceeding 25% annually.',
-            confidence: 0.9,
-            impact: 'high',
-            evidence_count: 7
-          },
-          {
-            type: 'operational',
-            title: 'Process Optimization Potential',
-            description: 'Current processes show 30% inefficiency that can be addressed through targeted improvements.',
-            confidence: 0.85,
-            impact: 'medium',
-            evidence_count: 5
-          },
-          {
-            type: 'predictive',
-            title: 'Technology Adoption Forecast',
-            description: 'Based on current trends, key technologies will reach mainstream adoption within 18-24 months.',
-            confidence: 0.75,
-            impact: 'high',
-            evidence_count: 6
-          }
-        ],
-        recommendations: [
-          {
-            title: 'Market Entry Strategy',
-            description: 'Develop a phased market entry strategy focusing on high-potential segments identified in the research.',
-            priority: 'high',
-            impact: 'High',
-            effort: 'Medium',
-            evidence_support: 0.88,
-            action_steps: [
-              'Conduct detailed market analysis for target segments',
-              'Develop tailored value propositions for each segment',
-              'Create implementation timeline with milestones',
-              'Establish metrics for success measurement'
-            ]
-          },
-          {
-            title: 'Process Improvement Initiative',
-            description: 'Implement process optimization based on identified inefficiencies and best practices.',
-            priority: 'medium',
-            impact: 'Medium',
-            effort: 'Low',
-            evidence_support: 0.82,
-            action_steps: [
-              'Map current processes and identify bottlenecks',
-              'Implement automation where appropriate',
-              'Train staff on new procedures',
-              'Monitor and measure improvements'
-            ]
-          }
-        ],
-        conclusions: [
-          {
-            title: 'Market Opportunity Validation',
-            statement: 'The research validates significant market opportunities in emerging segments with strong evidence supporting the potential for substantial growth and profitability.',
-            confidence: 0.92,
-            supporting_evidence: ['evidence_1', 'evidence_2', 'evidence_3']
-          },
-          {
-            title: 'Operational Efficiency Gains',
-            statement: 'Clear evidence supports the potential for significant operational efficiency improvements through targeted process optimization and technology adoption.',
-            confidence: 0.85,
-            supporting_evidence: ['evidence_4', 'evidence_5']
-          }
-        ]
-      }
     }
 
     // Helper methods

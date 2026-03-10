@@ -22,6 +22,8 @@ type UserAPIEnhanced struct {
     authService        authService.Service
     userDAO            *dao.UserDAO
     userPreferencesDAO *dao.UserPreferencesDAO
+    chatDAO            *dao.ChatDAO
+    researchDAO        *dao.ResearchDAO
 }
 
 // NewUserAPIEnhanced 创建增强的用户API
@@ -40,6 +42,18 @@ func NewUserAPIEnhancedWithPreferences(jwtManager *auth.JWTManager, authSvc auth
         authService:        authSvc,
         userDAO:            userDAO,
         userPreferencesDAO: prefsDAO,
+    }
+}
+
+// NewUserAPIEnhancedFull 创建完整的用户API（包含统计数据所需的DAO）
+func NewUserAPIEnhancedFull(jwtManager *auth.JWTManager, authSvc authService.Service, userDAO *dao.UserDAO, prefsDAO *dao.UserPreferencesDAO, chatDAO *dao.ChatDAO, researchDAO *dao.ResearchDAO) *UserAPIEnhanced {
+    return &UserAPIEnhanced{
+        jwtManager:         jwtManager,
+        authService:        authSvc,
+        userDAO:            userDAO,
+        userPreferencesDAO: prefsDAO,
+        chatDAO:            chatDAO,
+        researchDAO:        researchDAO,
     }
 }
 
@@ -121,7 +135,7 @@ func (api *UserAPIEnhanced) Register(c *gin.Context) {
         AccessToken:  accessToken,
         RefreshToken: refreshToken,
         TokenType:    "Bearer",
-        ExpiresIn:    86400,
+        ExpiresIn:    constant.TokenExpirationSeconds,
         User: &response.UserResponse{
             ID:        user.ID,
             Username:  user.Username,
@@ -170,7 +184,7 @@ func (api *UserAPIEnhanced) Login(c *gin.Context) {
     }
 
     // 检查用户状态
-    if user.Status != "active" {
+    if user.Status != constant.UserStatusActive {
         pkg.Unauthorized(c, "账户已被禁用")
         return
     }
@@ -193,7 +207,7 @@ func (api *UserAPIEnhanced) Login(c *gin.Context) {
         AccessToken:  accessToken,
         RefreshToken: refreshToken,
         TokenType:    "Bearer",
-        ExpiresIn:    86400,
+        ExpiresIn:    constant.TokenExpirationSeconds,
         User: &response.UserResponse{
             ID:        user.ID,
             Username:  user.Username,
@@ -234,6 +248,8 @@ func (api *UserAPIEnhanced) GetCurrentUser(c *gin.Context) {
         Email:     user.Email,
         FullName:  user.FullName,
         Phone:     user.Phone,
+        Avatar:    user.Avatar,
+        Bio:       user.Bio,
         Role:      user.Role,
         Status:    user.Status,
         CreatedAt: user.CreatedAt,
@@ -246,7 +262,7 @@ func (api *UserAPIEnhanced) GetCurrentUser(c *gin.Context) {
 
 // UpdateProfile 更新用户资料
 func (api *UserAPIEnhanced) UpdateProfile(c *gin.Context) {
-    _, err := middleware.RequireAuth(c)
+    userID, err := middleware.RequireAuth(c)
     if err != nil {
         pkg.Unauthorized(c, "认证失败")
         return
@@ -258,9 +274,43 @@ func (api *UserAPIEnhanced) UpdateProfile(c *gin.Context) {
         return
     }
 
+    ctx := c.Request.Context()
+
+    // 从数据库获取用户
+    user, err := api.userDAO.FindByID(ctx, userID)
+    if err != nil {
+        pkg.NotFound(c, "用户不存在")
+        return
+    }
+
+    // 更新字段（仅更新非nil字段）
+    if req.FullName != nil {
+        user.FullName = req.FullName
+    }
+    if req.Avatar != nil {
+        user.Avatar = req.Avatar
+    }
+    if req.Bio != nil {
+        user.Bio = req.Bio
+    }
+
+    // 保存到数据库
+    if err := api.userDAO.Update(ctx, user); err != nil {
+        pkg.InternalError(c, "更新资料失败: "+err.Error())
+        return
+    }
+
     pkg.Success(c, gin.H{
         "success": true,
         "message": "资料更新成功",
+        "user": gin.H{
+            "id":        user.ID,
+            "username":  user.Username,
+            "email":     user.Email,
+            "full_name": user.FullName,
+            "avatar":    user.Avatar,
+            "bio":       user.Bio,
+        },
     })
 }
 
@@ -301,8 +351,8 @@ func (api *UserAPIEnhanced) GetPreferences(c *gin.Context) {
     preferences := &response.UserPreferencesResponse{
         Theme:               "light",
         Language:            "zh",
-        DefaultLLMProvider:  constant.ProviderDeepSeek,
-        DefaultModel:        "deepseek-chat",
+        DefaultLLMProvider:  constant.DefaultProvider,
+        DefaultModel:        constant.DefaultModel,
         StreamEnabled:       true,
         NotificationEnabled: true,
         AutoSaveEnabled:     true,
@@ -477,13 +527,13 @@ func (api *UserAPIEnhanced) RefreshToken(c *gin.Context) {
         AccessToken:  newAccessToken,
         RefreshToken: newRefreshToken,
         TokenType:    "Bearer",
-        ExpiresIn:    86400,
+        ExpiresIn:    constant.TokenExpirationSeconds,
         User: &response.UserResponse{
             ID:       claims.UserID,
             Username: claims.Username,
             Email:    claims.Email,
             Role:     "user",
-            Status:   "active",
+            Status:   constant.UserStatusActive,
         },
     }
 
@@ -507,7 +557,7 @@ func (api *UserAPIEnhanced) Logout(c *gin.Context) {
 
 // ChangePassword 修改密码
 func (api *UserAPIEnhanced) ChangePassword(c *gin.Context) {
-    _, err := middleware.RequireAuth(c)
+    userID, err := middleware.RequireAuth(c)
     if err != nil {
         pkg.Unauthorized(c, "认证失败")
         return
@@ -516,6 +566,35 @@ func (api *UserAPIEnhanced) ChangePassword(c *gin.Context) {
     var req request.ChangePasswordRequest
     if err := c.ShouldBindJSON(&req); err != nil {
         pkg.BadRequest(c, "无效的请求参数: "+err.Error())
+        return
+    }
+
+    ctx := c.Request.Context()
+
+    // 获取用户
+    user, err := api.userDAO.FindByID(ctx, userID)
+    if err != nil {
+        pkg.NotFound(c, "用户不存在")
+        return
+    }
+
+    // 验证旧密码
+    if !auth.CheckPassword(req.CurrentPassword, user.Password) {
+        pkg.BadRequest(c, "当前密码不正确")
+        return
+    }
+
+    // 哈希新密码
+    hashedPassword, err := auth.HashPassword(req.NewPassword)
+    if err != nil {
+        pkg.InternalError(c, "密码加密失败")
+        return
+    }
+
+    // 更新密码
+    user.Password = hashedPassword
+    if err := api.userDAO.Update(ctx, user); err != nil {
+        pkg.InternalError(c, "密码更新失败: "+err.Error())
         return
     }
 
@@ -533,16 +612,55 @@ func (api *UserAPIEnhanced) GetUserStats(c *gin.Context) {
         return
     }
 
+    ctx := c.Request.Context()
+
+    // 获取用户信息（用于计算账户年龄）
+    user, err := api.userDAO.FindByID(ctx, userID)
+    if err != nil {
+        pkg.NotFound(c, "用户不存在")
+        return
+    }
+
+    accountAge := int64(time.Since(user.CreatedAt).Hours() / 24)
+
+    // 查询真实统计数据
+    var totalChatSessions int64
+    var totalResearchSessions int64
+    var totalMessages int64
+
+    if api.chatDAO != nil {
+        totalChatSessions, _ = api.chatDAO.CountSessionsByUserID(ctx, userID)
+        totalMessages, _ = api.chatDAO.CountMessagesByUserID(ctx, userID)
+    }
+    if api.researchDAO != nil {
+        totalResearchSessions, _ = api.researchDAO.CountSessionsByUserID(ctx, userID)
+    }
+
+    // 获取用户偏好中的默认模型信息
+    mostUsedProvider := constant.DefaultProvider
+    mostUsedModel := constant.DefaultModel
+    if api.userPreferencesDAO != nil {
+        prefs, err := api.userPreferencesDAO.GetOrCreate(ctx, userID)
+        if err == nil && prefs != nil {
+            if prefs.DefaultLLMProvider != "" {
+                mostUsedProvider = prefs.DefaultLLMProvider
+            }
+            if prefs.DefaultModel != "" {
+                mostUsedModel = prefs.DefaultModel
+            }
+        }
+    }
+
     statistics := &response.UserStatistics{
         UserID:                userID,
-        TotalChatSessions:     25,
-        TotalResearchSessions: 8,
-        TotalMessages:         156,
-        TotalTokensUsed:       12500,
-        LastActivity:          time.Now().Add(-time.Minute * 45),
-        AccountAge:            30,
-        MostUsedProvider:      constant.ProviderDeepSeek,
-        MostUsedModel:         "deepseek-chat",
+        TotalChatSessions:     totalChatSessions,
+        TotalResearchSessions: totalResearchSessions,
+        TotalMessages:         totalMessages,
+        TotalTokensUsed:       0, // 暂无token统计表
+        LastActivity:          user.UpdatedAt,
+        AccountAge:            accountAge,
+        MostUsedProvider:      mostUsedProvider,
+        MostUsedModel:         mostUsedModel,
         PreferredResearchType: constant.ResearchTypeQuick,
     }
 
@@ -557,7 +675,7 @@ func (api *UserAPIEnhanced) GetUserStats(c *gin.Context) {
 
 // DeleteAccount 删除账户
 func (api *UserAPIEnhanced) DeleteAccount(c *gin.Context) {
-    _, err := middleware.RequireAuth(c)
+    userID, err := middleware.RequireAuth(c)
     if err != nil {
         pkg.Unauthorized(c, "认证失败")
         return
@@ -574,11 +692,38 @@ func (api *UserAPIEnhanced) DeleteAccount(c *gin.Context) {
         return
     }
 
+    ctx := c.Request.Context()
+
+    // 验证密码
+    user, err := api.userDAO.FindByID(ctx, userID)
+    if err != nil {
+        pkg.NotFound(c, "用户不存在")
+        return
+    }
+
+    if !auth.CheckPassword(req.Password, user.Password) {
+        pkg.BadRequest(c, "密码不正确")
+        return
+    }
+
+    // 软删除：将状态设为 banned 并触发 GORM 软删除
+    user.Status = constant.UserStatusBanned
+    if err := api.userDAO.Update(ctx, user); err != nil {
+        pkg.InternalError(c, "删除账户失败")
+        return
+    }
+
+    // 执行 GORM 软删除（设置 deleted_at）
+    if err := api.userDAO.Delete(ctx, userID); err != nil {
+        pkg.InternalError(c, "删除账户失败")
+        return
+    }
+
     scheduledAt := time.Now().Add(time.Hour * 24 * 30)
 
     resp := &response.AccountDeletionResponse{
         Success:     true,
-        Message:     "账户删除请求已提交，将在30天后永久删除",
+        Message:     "账户已标记删除，数据将在30天后永久清除",
         ScheduledAt: &scheduledAt,
     }
 

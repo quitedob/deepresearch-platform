@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // OllamaProvider Ollama本地LLM提供商
@@ -20,7 +22,7 @@ type OllamaProvider struct {
 // NewOllamaProvider 创建Ollama提供商
 func NewOllamaProvider(config ChatModelConfig) (*OllamaProvider, error) {
 	if config.BaseURL == "" {
-		config.BaseURL = "http://localhost:11434"
+		config.BaseURL = constant.BaseURLOllama
 	}
 	if config.Model == "" {
 		config.Model = "gemma3:4b"

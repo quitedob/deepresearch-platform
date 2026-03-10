@@ -14,6 +14,7 @@ import (
 	"github.com/ai-research-platform/internal/repository/dao"
 	"github.com/ai-research-platform/internal/repository/model"
 	"github.com/ai-research-platform/internal/service"
+	"github.com/ai-research-platform/internal/types/constant"
 	"github.com/ai-research-platform/internal/types/request"
 	"github.com/ai-research-platform/internal/types/response"
 )
@@ -23,6 +24,7 @@ type ResearchAPI struct {
 	researchDAO     *dao.ResearchDAO
 	researchService *service.ResearchService
 	membershipDAO   *dao.MembershipDAO
+	modelConfigDAO  *dao.ModelConfigDAO
 }
 
 // NewResearchAPI 创建研究API
@@ -42,8 +44,18 @@ func NewResearchAPIWithMembership(researchDAO *dao.ResearchDAO, researchService 
 	}
 }
 
+// NewResearchAPIFull 创建完整的研究API（包含模型配置验证）
+func NewResearchAPIFull(researchDAO *dao.ResearchDAO, researchService *service.ResearchService, membershipDAO *dao.MembershipDAO, modelConfigDAO *dao.ModelConfigDAO) *ResearchAPI {
+	return &ResearchAPI{
+		researchDAO:     researchDAO,
+		researchService: researchService,
+		membershipDAO:   membershipDAO,
+		modelConfigDAO:  modelConfigDAO,
+	}
+}
+
 // 研究查询的最大长度限制
-const maxResearchQueryLength = 10000
+const maxResearchQueryLength = constant.MaxResearchQueryLength
 
 // StartResearch 开始研究
 // 修复：添加输入验证、状态同步
@@ -94,9 +106,13 @@ func (api *ResearchAPI) StartResearch(c *gin.Context) {
 	}
 
 	// 修复：验证研究类型
-	validResearchTypes := map[string]bool{"quick": true, "deep": true, "comprehensive": true}
+	validResearchTypes := map[string]bool{
+		constant.ResearchTypeQuick:         true,
+		constant.ResearchTypeDeep:          true,
+		constant.ResearchTypeComprehensive: true,
+	}
 	if req.ResearchType == "" {
-		req.ResearchType = "deep"
+		req.ResearchType = constant.ResearchTypeDeep
 	} else if !validResearchTypes[req.ResearchType] {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -154,6 +170,26 @@ func (api *ResearchAPI) StartResearch(c *gin.Context) {
 	}
 	if req.ToolsConfig != nil {
 		enabledTools = req.ToolsConfig.EnabledTools
+	}
+
+	// 验证请求的模型是否在数据库中启用
+	if api.modelConfigDAO != nil && llmProvider != "" && llmModel != "" {
+		isEnabled, err := api.modelConfigDAO.IsModelEnabled(c.Request.Context(), llmProvider, llmModel)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "验证模型配置失败",
+			})
+			return
+		}
+		if !isEnabled {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "模型 " + llmProvider + "/" + llmModel + " 未启用或不可用，请在设置中选择其他模型",
+				"code":    "MODEL_DISABLED",
+			})
+			return
+		}
 	}
 
 	go func() {
@@ -363,7 +399,7 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 	c.Writer.Flush()
 
 	// 创建带超时的上下文（研究任务最长30分钟）
-	streamCtx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Minute)
+	streamCtx, cancel := context.WithTimeout(c.Request.Context(), constant.ResearchSSETimeout)
 	defer cancel()
 
 	if api.researchService != nil {
@@ -460,31 +496,12 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 			}
 		})
 	} else {
-		for i := 0; i <= 100; i += 20 {
-			select {
-			case <-c.Request.Context().Done():
-				return
-			default:
-				c.SSEvent("message", gin.H{
-					"type":   "status_update",
-					"status": "in_progress",
-					"data": gin.H{
-						"progress":     i,
-						"current_step": "模拟研究进度",
-					},
-				})
-				c.Writer.Flush()
-				time.Sleep(time.Second)
-			}
-		}
-
+		// researchService 未初始化，返回错误而非模拟数据
 		c.SSEvent("message", gin.H{
-			"type": "completed",
-			"data": gin.H{
-				"session_id":  sessionID,
-				"report_text": "这是模拟的研究报告内容。",
-			},
+			"type":  "failed",
+			"error": "研究服务未初始化，请联系管理员",
 		})
+		c.Writer.Flush()
 	}
 }
 

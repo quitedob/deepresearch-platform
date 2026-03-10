@@ -1,9 +1,11 @@
 ﻿package config
 
 import (
+    "fmt"
     "os"
     "regexp"
     "strings"
+    "time"
     
     "github.com/joho/godotenv"
     "github.com/spf13/viper"
@@ -175,7 +177,9 @@ func Load(configPath string) (*Config, error) {
         config.Admin.Username = "admin"
     }
     if config.Admin.Password == "" {
-        config.Admin.Password = "admin123"
+        // P0: 不再使用硬编码默认密码，强制要求通过环境变量设置
+        fmt.Fprintln(os.Stderr, "[CRITICAL] ADMIN_PASSWORD environment variable is not set! Using a random password. Set ADMIN_PASSWORD for production use.")
+        config.Admin.Password = fmt.Sprintf("auto-%d-%d", os.Getpid(), time.Now().UnixNano())
     }
 
     // 从环境变量读取JWT密钥（优先级高于配置文件）

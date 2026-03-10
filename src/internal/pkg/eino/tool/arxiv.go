@@ -14,6 +14,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // ArxivTool ArXiv 学术搜索工具，实Eino InvokableTool 接口
@@ -124,7 +126,7 @@ func (t *ArxivTool) search(ctx context.Context, query string, maxResults int) ([
 	params.Set("max_results", fmt.Sprintf("%d", maxResults))
 	params.Set("sortBy", "relevance")
 
-	apiURL := fmt.Sprintf("https://export.arxiv.org/api/query?%s", params.Encode())
+	apiURL := fmt.Sprintf("%s?%s", constant.ArXivAPIURL, params.Encode())
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err
@@ -164,7 +166,7 @@ func (t *ArxivTool) search(ctx context.Context, query string, maxResults int) ([
 			Title:     strings.TrimSpace(strings.ReplaceAll(entry.Title, "\n", " ")),
 			Authors:   authors,
 			Abstract:  strings.TrimSpace(strings.ReplaceAll(entry.Summary, "\n", " ")),
-			URL:       fmt.Sprintf("https://arxiv.org/abs/%s", paperID),
+			URL:       fmt.Sprintf(constant.ArXivAbsURLTemplate, paperID),
 			Published: entry.Published,
 		})
 	}

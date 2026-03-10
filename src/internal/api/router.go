@@ -203,18 +203,14 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
             researchGroup.GET("/statistics", r.researchAPI.GetResearchStatistics)
         }
 
-        // LLM管理路由
+        // LLM管理路由（需要认证，防止泄露模型配置信息）
         llmGroup := v1Group.Group("/llm")
+        llmGroup.Use(middleware.Auth())
         {
             llmGroup.GET("/providers", r.llmAPI.ListProviders)
             llmGroup.GET("/models", r.llmAPI.ListModels)
             llmGroup.GET("/metrics", r.llmAPI.GetMetrics)
-        }
-
-        authorizedLLM := v1Group.Group("/llm")
-        authorizedLLM.Use(middleware.Auth())
-        {
-            authorizedLLM.POST("/test", r.llmAPI.TestProvider)
+            llmGroup.POST("/test", r.llmAPI.TestProvider)
         }
 
         // MCP工具路由

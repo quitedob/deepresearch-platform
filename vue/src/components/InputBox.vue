@@ -920,6 +920,58 @@ onUnmounted(() => {
     padding: 20px;
     max-height: calc(90vh - 80px);
   }
+
+  /* 移动端按钮触摸目标优化 */
+  .attach-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+  }
+
+  .attach-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .attachments-bar {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* 任务进度面板移动端适配 */
+  .task-progress-panel {
+    width: calc(100vw - 32px);
+    right: 16px;
+    top: 16px;
+    max-width: 350px;
+  }
+
+  .text-input {
+    font-size: 16px; /* 防止iOS自动缩放 */
+  }
+}
+
+@media (max-width: 480px) {
+  .attachments-bar {
+    gap: 2px;
+  }
+
+  .attach-btn {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
+  }
+
+  .task-progress-panel {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
 }
 
 </style>

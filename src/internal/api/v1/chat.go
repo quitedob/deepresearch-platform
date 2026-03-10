@@ -107,10 +107,10 @@ func (api *ChatAPI) CreateSession(c *gin.Context) {
 		req.Title = "新对话"
 	}
 	if req.LLMProvider == "" {
-		req.LLMProvider = "deepseek"
+		req.LLMProvider = constant.DefaultProvider
 	}
 	if req.ModelName == "" {
-		req.ModelName = "deepseek-chat"
+		req.ModelName = constant.DefaultModel
 	}
 
 	session := &model.ChatSession{
@@ -648,12 +648,13 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 		quotaDeducted = true
 	}
 
-	// 如果后续处理失败，需要退还配额
-	defer func() {
-		if quotaDeducted && recover() != nil {
-			api.membershipDAO.RefundChatQuota(c.Request.Context(), userID)
+	// refundQuota 在LLM调用失败时退还已扣减的配额
+	refundQuota := func() {
+		if quotaDeducted && api.membershipDAO != nil {
+			_ = api.membershipDAO.RefundChatQuota(c.Request.Context(), userID)
+			quotaDeducted = false
 		}
-	}()
+	}
 
 	startTime := time.Now()
 
@@ -663,6 +664,7 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 	if api.chatDAO != nil {
 		session, err = api.chatDAO.GetSessionByID(c.Request.Context(), req.SessionID)
 		if err != nil {
+			refundQuota()
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
 				"error": gin.H{
@@ -673,6 +675,7 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 			return
 		}
 		if session.UserID != userID {
+			refundQuota()
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"error": gin.H{
@@ -691,8 +694,8 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 			modelName = api.getDeepThinkingModel(providerName, modelName)
 		}
 	} else {
-		providerName = constant.ProviderDeepSeek
-		modelName = "deepseek-chat"
+		providerName = constant.DefaultProvider
+		modelName = constant.DefaultModel
 	}
 
 	// 构建消息
@@ -711,6 +714,7 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 	var tokensUsed int
 
 	if api.llmScheduler == nil {
+		refundQuota()
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
 			"error": gin.H{
@@ -722,6 +726,7 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 	}
 
 	if !api.llmScheduler.SupportsModel(modelName) {
+		refundQuota()
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error": gin.H{
@@ -737,6 +742,7 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 
 	result, err := api.llmScheduler.ExecuteWithFallback(c.Request.Context(), messages, modelName)
 	if err != nil {
+		refundQuota()
 		errCode, errMsg := friendlyLLMError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -769,9 +775,6 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 		}
 		api.chatDAO.CreateMessage(c.Request.Context(), assistantMsg)
 	}
-
-	// 配额已在请求开始时扣减，无需再次增加
-	// 如果需要在失败时退还配额，可以在错误处理中调用 RefundChatQuota
 
 	c.JSON(http.StatusOK, response.ChatResponse{
 		SessionID:    req.SessionID,
@@ -866,12 +869,13 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 		quotaDeducted = true
 	}
 
-	// 如果后续处理失败，需要退还配额
-	defer func() {
-		if quotaDeducted && recover() != nil {
-			api.membershipDAO.RefundChatQuota(c.Request.Context(), userID)
+	// refundQuota 在LLM调用失败时退还已扣减的配额
+	refundQuota := func() {
+		if quotaDeducted && api.membershipDAO != nil {
+			_ = api.membershipDAO.RefundChatQuota(c.Request.Context(), userID)
+			quotaDeducted = false
 		}
-	}()
+	}
 
 	startTime := time.Now()
 
@@ -881,6 +885,7 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 	if api.chatDAO != nil {
 		session, err = api.chatDAO.GetSessionByID(c.Request.Context(), req.SessionID)
 		if err != nil {
+			refundQuota()
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
 				"error": gin.H{
@@ -891,6 +896,7 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 			return
 		}
 		if session.UserID != userID {
+			refundQuota()
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"error": gin.H{
@@ -903,8 +909,8 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 		providerName = session.Provider
 		modelName = session.Model
 	} else {
-		providerName = constant.ProviderDeepSeek
-		modelName = "deepseek-chat"
+		providerName = constant.DefaultProvider
+		modelName = constant.DefaultModel
 	}
 
 	// 1. 使用 WebSearchTool 进行网络搜索
@@ -932,6 +938,7 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 	messages := api.buildContextMessages(c.Request.Context(), userID, req.SessionID, searchPrompt)
 
 	if api.llmScheduler == nil {
+		refundQuota()
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
 			"error": gin.H{
@@ -944,6 +951,7 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 
 	result, err := api.llmScheduler.ExecuteWithFallback(c.Request.Context(), messages, modelName)
 	if err != nil {
+		refundQuota()
 		errCode, errMsg := friendlyLLMError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -976,8 +984,6 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 		}
 		api.chatDAO.CreateMessage(c.Request.Context(), assistantMsg)
 	}
-
-	// 配额已在请求开始时扣减，无需再次增加
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -1050,7 +1056,14 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 			return
 		}
 		quotaDeducted = true
-		_ = quotaDeducted // 标记已扣减，用于后续可能的退还逻辑
+	}
+
+	// refundQuota 在LLM调用失败时退还已扣减的配额
+	refundQuota := func() {
+		if quotaDeducted && api.membershipDAO != nil {
+			_ = api.membershipDAO.RefundChatQuota(c.Request.Context(), userID)
+			quotaDeducted = false
+		}
 	}
 
 	var session *model.ChatSession
@@ -1059,6 +1072,7 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 	if api.chatDAO != nil {
 		session, err = api.chatDAO.GetSessionByID(c.Request.Context(), req.SessionID)
 		if err != nil {
+			refundQuota()
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
 				"error": gin.H{
@@ -1069,6 +1083,7 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 			return
 		}
 		if session.UserID != userID {
+			refundQuota()
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"error": gin.H{
@@ -1080,7 +1095,7 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 		}
 		modelName = session.Model
 	} else {
-		modelName = "deepseek-chat"
+		modelName = constant.DefaultModel
 	}
 
 	c.Header("Content-Type", "text/event-stream")
@@ -1094,13 +1109,14 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 	c.SSEvent("message", gin.H{"type": "start", "content": ""})
 	c.Writer.Flush()
 
-	// 创建带超时的上下文，防止长时间运行
-	streamCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
+	// 创建带超时的上下文（与前端30分钟超时对齐，普通聊天10分钟足够）
+	streamCtx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Minute)
 	defer cancel()
 
 	if api.llmScheduler != nil {
 		reader, _, err := api.llmScheduler.StreamWithFallback(streamCtx, messages, modelName)
 		if err != nil {
+			refundQuota()
 			_, errMsg := friendlyLLMError(err)
 			c.SSEvent("message", gin.H{"type": "error", "error": errMsg})
 			c.Writer.Flush()

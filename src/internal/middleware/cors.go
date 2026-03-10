@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // CORS CORS中间件
@@ -53,7 +54,7 @@ func CORS() gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
 			c.Header("Access-Control-Expose-Headers", "Content-Length")
 			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Max-Age", "86400")
+			c.Header("Access-Control-Max-Age", constant.CORSCacheMaxAge)
 			// Vary header 确保代理按 Origin 正确缓存
 			c.Header("Vary", "Origin")
 		}

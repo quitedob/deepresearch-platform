@@ -532,3 +532,13 @@ func (c *ChatDAO) PermanentlyDeleteMessages(ctx context.Context, olderThan time.
 
 	return int(result.RowsAffected), result.Error
 }
+
+// CountMessagesByUserID 统计用户所有消息数量
+func (c *ChatDAO) CountMessagesByUserID(ctx context.Context, userID string) (int64, error) {
+	var count int64
+	err := c.db.WithContext(ctx).Model(&model.Message{}).
+		Joins("JOIN chat_sessions ON chat_sessions.id = messages.session_id").
+		Where("chat_sessions.user_id = ?", userID).
+		Count(&count).Error
+	return count, err
+}

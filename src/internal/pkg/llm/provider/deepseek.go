@@ -9,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // DeepSeekProvider DeepSeek LLM提供商
@@ -24,15 +27,27 @@ func NewDeepSeekProvider(config ChatModelConfig) (*DeepSeekProvider, error) {
 		return nil, fmt.Errorf("DeepSeek API key is required")
 	}
 	if config.BaseURL == "" {
-		config.BaseURL = "https://api.deepseek.com"
+		config.BaseURL = constant.BaseURLDeepSeek
 	}
 	if config.Model == "" {
 		config.Model = "deepseek-chat"
 	}
 
+	timeout := 60 * time.Second
+	if config.Timeout > 0 {
+		timeout = time.Duration(config.Timeout) * time.Second
+	}
+
 	return &DeepSeekProvider{
 		config: config,
-		client: &http.Client{},
+		client: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+			},
+		},
 	}, nil
 }
 
@@ -216,6 +231,12 @@ func (p *DeepSeekProvider) StreamGenerate(ctx context.Context, messages []Messag
 
 		reader := bufio.NewReader(resp.Body)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				if err != io.EOF {
@@ -360,7 +381,7 @@ func (p *DeepSeekProvider) GenerateWithPrefixContinuation(ctx context.Context, m
 	}
 
 	// 使用beta endpoint
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.deepseek.com/beta/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", constant.BaseURLDeepSeekBeta+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

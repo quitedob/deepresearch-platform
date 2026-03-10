@@ -238,6 +238,8 @@ const toggleProvider = async (provider) => {
   try {
     await updateProviderConfig(provider.provider, !provider.is_enabled)
     provider.is_enabled = !provider.is_enabled
+    clearProvidersCache()
+    localStorage.setItem('model_config_updated', Date.now().toString())
   } catch (error) {
     console.error('更新提供商配置失败:', error)
     handleAPIError(error, '更新提供商配置')
@@ -250,6 +252,8 @@ const toggleModel = async (model) => {
     model.is_enabled = !model.is_enabled
     // 清除前端缓存，确保其他页面获取最新配置
     clearProvidersCache()
+    // 通知其他标签页模型配置已变更
+    localStorage.setItem('model_config_updated', Date.now().toString())
   } catch (error) {
     console.error('更新模型配置失败:', error)
     handleAPIError(error, '更新模型配置')
@@ -281,6 +285,7 @@ const enableAllModels = async () => {
     // 更新本地状态
     models.value.forEach(m => m.is_enabled = true)
     clearProvidersCache()
+    localStorage.setItem('model_config_updated', Date.now().toString())
     alert(`已启用 ${configs.length} 个模型`)
   } catch (error) {
     handleAPIError(error, '批量启用模型')
@@ -313,6 +318,7 @@ const disableAllModels = async () => {
     // 更新本地状态
     models.value.forEach(m => m.is_enabled = false)
     clearProvidersCache()
+    localStorage.setItem('model_config_updated', Date.now().toString())
     alert(`已禁用 ${configs.length} 个模型`)
   } catch (error) {
     handleAPIError(error, '批量禁用模型')
@@ -338,6 +344,7 @@ const enableProviderModels = async (providerName) => {
       .filter(m => m.provider === providerName)
       .forEach(m => m.is_enabled = true)
     clearProvidersCache()
+    localStorage.setItem('model_config_updated', Date.now().toString())
   } catch (error) {
     handleAPIError(error, '批量启用模型')
   }
@@ -360,6 +367,7 @@ const disableProviderModels = async (providerName) => {
       .filter(m => m.provider === providerName)
       .forEach(m => m.is_enabled = false)
     clearProvidersCache()
+    localStorage.setItem('model_config_updated', Date.now().toString())
   } catch (error) {
     handleAPIError(error, '批量禁用模型')
   }

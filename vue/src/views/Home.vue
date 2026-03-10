@@ -46,7 +46,8 @@ import ChatContainer from '@/components/ChatContainer.vue';
 import InputBox from '@/components/InputBox.vue';
 import { chatAPI } from '@/api/index';
 import { getProviders } from '@/api/model';
-import { API_BASE_URL } from '@/utils/config';
+import { API_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDER, RESEARCH_CONFIG } from '@/utils/config';
+import { isWithinDays } from '@/utils/timeFormat';
 import { getAuthToken } from '@/utils/token';
 
 /**
@@ -101,7 +102,7 @@ const loadDraft = (sessionId) => {
     try {
       const draft = JSON.parse(saved);
       // 草稿24小时内有效
-      if (Date.now() - draft.timestamp < 24 * 60 * 60 * 1000) {
+      if (isWithinDays(draft.timestamp, 1)) {
         return draft.content;
       }
       localStorage.removeItem(key);
@@ -255,7 +256,7 @@ const handleSummarizeAndNew = async () => {
  * 根据模型名称获取提供商
  */
 const getProviderFromModel = (modelName) => {
-  if (!modelName) return 'deepseek';
+  if (!modelName) return DEFAULT_PROVIDER;
   
   if (modelName.startsWith('deepseek')) {
     return 'deepseek';
@@ -263,8 +264,8 @@ const getProviderFromModel = (modelName) => {
     return 'zhipu';
   }
   
-  // 默认返回 deepseek
-  return 'deepseek';
+  // 默认返回配置的 provider
+  return DEFAULT_PROVIDER;
 };
 
 /**
@@ -295,7 +296,7 @@ const handleSendDeepThink = async (text) => {
 
   try {
     // 从 API 获取当前 provider 的深度思考模型
-    const currentProvider = chatStore.currentProvider || 'deepseek';
+    const currentProvider = chatStore.currentProvider || DEFAULT_PROVIDER;
     let deepThinkModel = '';
     let provider = currentProvider;
     
@@ -386,7 +387,7 @@ const handleSendWebSearch = async (text) => {
     // 如果没有活动会话，先创建一个
     let sessionId = chatStore.activeSessionId;
     if (!sessionId) {
-      const modelName = chatStore.currentModel || 'deepseek-chat';
+      const modelName = chatStore.currentModel || DEFAULT_MODEL;
       const provider = chatStore.currentProvider || getProviderFromModel(modelName);
       const newSession = await chatAPI.createSession({
         title: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
@@ -471,8 +472,8 @@ const handleSendResearch = async (text) => {
   chatStore.setTypingStatus(true);
 
   try {
-    const modelName = chatStore.currentModel || 'glm-4.5-air';
-    const provider = getProviderFromModel(modelName);
+    const modelName = chatStore.currentModel || DEFAULT_MODEL;
+    const provider = chatStore.currentProvider || getProviderFromModel(modelName);
 
     const researchResponse = await researchAPI.startResearch({
       query: text,
@@ -481,7 +482,7 @@ const handleSendResearch = async (text) => {
       include_images: false,
       llm_config: {
         provider: provider,
-        model_name: modelName
+        model: modelName
       }
     });
 
@@ -622,7 +623,6 @@ const handleSendResearch = async (text) => {
       };
 
       // ✅ 增加超时时间到 30 分钟，研究可能需要较长时间
-      const RESEARCH_TIMEOUT_MS = 30 * 60 * 1000; // 30分钟
       const timeoutId = setTimeout(() => {
         console.warn('⚠️ 研究超时（30分钟）');
         cleanupEventSource();
@@ -634,7 +634,7 @@ const handleSendResearch = async (text) => {
           chatStore.setTypingStatus(false);
           chatStore.setResearchMode(false, null);
         }
-      }, RESEARCH_TIMEOUT_MS);
+      }, RESEARCH_CONFIG.TIMEOUT_MS);
 
       // ✅ 统一的EventSource清理函数
       const cleanupEventSource = () => {
@@ -735,7 +735,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
     // 如果没有活动会话，先创建一个
     let sessionId = chatStore.activeSessionId;
     if (!sessionId) {
-      const modelName = chatStore.currentModel || 'deepseek-chat';
+      const modelName = chatStore.currentModel || DEFAULT_MODEL;
       const provider = chatStore.currentProvider || getProviderFromModel(modelName);
       const newSession = await chatAPI.createSession({
         title: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
@@ -1167,6 +1167,10 @@ const stopGeneration = () => {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .home-layout {
+    height: 100dvh;
+  }
+
   .input-area-wrapper {
     padding: var(--spacing-md);
   }

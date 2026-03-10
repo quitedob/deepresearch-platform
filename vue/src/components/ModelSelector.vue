@@ -71,10 +71,10 @@ const getCurrentProviderDisplay = () => {
 };
 
 // 从 API 加载 providers
-const loadProviders = async () => {
+const loadProviders = async (forceRefresh = false) => {
   loading.value = true;
   try {
-    const response = await getProviders();
+    const response = await getProviders(forceRefresh);
     providers.value = response.data?.providers || [];
     
     // 如果没有设置当前服务商，设置第一个可用的
@@ -82,6 +82,16 @@ const loadProviders = async () => {
       const firstProvider = providers.value[0];
       chatStore.setProvider(firstProvider.name);
       chatStore.setModel(firstProvider.default_model);
+    }
+    
+    // 如果当前选中的服务商已被禁用，切换到第一个可用的
+    if (chatStore.currentProvider && providers.value.length > 0) {
+      const stillAvailable = providers.value.find(p => p.name === chatStore.currentProvider);
+      if (!stillAvailable) {
+        const firstProvider = providers.value[0];
+        chatStore.setProvider(firstProvider.name);
+        chatStore.setModel(firstProvider.default_model);
+      }
     }
   } catch (error) {
     console.error('加载服务商列表失败:', error);
@@ -119,15 +129,33 @@ const handleClickOutside = (event) => {
   }
 };
 
+// 页面可见性变化时刷新 providers（处理标签页切换）
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    loadProviders(true);
+  }
+};
+
+// 监听其他标签页的模型配置变更（通过 localStorage 事件）
+const handleStorageChange = (event) => {
+  if (event.key === 'model_config_updated') {
+    loadProviders(true);
+  }
+};
+
 // 组件挂载
 onMounted(() => {
   document.addEventListener('mousedown', handleClickOutside);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('storage', handleStorageChange);
   loadProviders();
 });
 
 // 组件卸载
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleClickOutside);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  window.removeEventListener('storage', handleStorageChange);
 });
 
 // 导出方法供外部使用
@@ -135,7 +163,7 @@ defineExpose({
   getDeepThinkModel: () => currentProvider.value?.deep_think_model || '',
   getDefaultModel: () => currentProvider.value?.default_model || '',
   getCurrentProvider: () => currentProvider.value,
-  refreshProviders: loadProviders,
+  refreshProviders: () => loadProviders(true),
 });
 </script>
 
@@ -197,6 +225,7 @@ defineExpose({
   left: 0;
   margin-top: 8px;
   width: 280px;
+  max-width: calc(100vw - 32px);
   background-color: var(--secondary-bg);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -302,5 +331,27 @@ defineExpose({
   color: var(--text-primary);
   font-weight: 500;
   font-family: monospace;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .current-model-btn {
+    min-width: 120px;
+    padding: 6px 12px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .model-dropdown {
+    width: calc(100vw - 32px);
+    max-width: 280px;
+    left: auto;
+    right: 0;
+  }
+
+  .provider-option {
+    padding: 14px 12px;
+    min-height: 44px;
+  }
 }
 </style>

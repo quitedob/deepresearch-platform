@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // WebSearchTool 网络搜索工具，使用智谱AI web_search
@@ -94,6 +96,7 @@ func (t *WebSearchTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	}
 
 	if t.apiKey == "" {
+		log.Println("[WARN] WebSearchTool: ZHIPU_API_KEY 未配置，返回模拟搜索结果")
 		return t.mockSearch(args.Query), nil
 	}
 
@@ -119,7 +122,7 @@ func (t *WebSearchTool) searchZhipu(ctx context.Context, query string) (string, 
 	}
 
 	jsonBody, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://open.bigmodel.cn/api/paas/v4/chat/completions", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", constant.ZhipuChatCompletionsURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", err
 	}

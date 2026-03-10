@@ -51,6 +51,14 @@
 - 证据链追踪和可靠性分析
 - 支持Markdown/JSON导出
 
+### 📄 AI论文生成系统
+- **多模板支持**: APA、MLA、Chicago、IEEE等学术格式
+- **章节生成**: 摘要、引言、文献综述、方法论、结果、讨论、结论
+- **智能引用**: 自动生成符合规范的引用格式
+- **字数统计**: 实时统计各章节字数
+- **章节重生成**: 支持单独重新生成某个章节
+- **导出功能**: 支持Markdown和PDF格式导出
+
 ### 📝 AI题目生成系统
 - **支持题型**: 单选题、多选题、判断题、简答题
 - **智能生成**: 自动生成题目ID、分值、解析
@@ -102,7 +110,8 @@
 │         (Vite + Pinia + Vue Router + Element Plus)                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │ ChatContainer│  │ResearchSpace │  │  AISpace     │             │
-│  │ AdminPanel   │  │MembershipMgr │  │  Notification │             │
+│  │ PaperGen     │  │MembershipMgr │  │  Notification │             │
+│  │ AdminPanel   │  │ModelConfig   │  │  Monitoring  │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
                               ↕ HTTP/SSE/WebSocket
@@ -110,7 +119,8 @@
 │                      Go Backend (Gin)                               │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │ Auth API     │  │ Chat API     │  │ Research API │             │
-│  │ Membership   │  │ AIQuestion   │  │ Notification │             │
+│  │ Membership   │  │ AIQuestion   │  │ Paper API    │             │
+│  │ Notification │  │ MCP API      │  │ LLM API      │             │
 │  │ Admin API    │  │ MCP API      │  │ LLM API      │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
@@ -124,6 +134,7 @@
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │ LLMScheduler │  │ ChatModel    │  │ Tool Registry│             │
 │  │ StreamManager│  │ ConfigMgr    │  │ QuotaManager │             │
+│  │ PaperGen     │  │ CitationMgr  │  │ TemplateMgr  │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
                               ↕
@@ -133,6 +144,7 @@
 │  │ PostgreSQL   │  │ Redis        │  │ LLM APIs     │             │
 │  │ (Users/Chat  │  │ (Cache/      │  │ DeepSeek     │             │
 │  │  Research/   │  │  Session)    │  │ Zhipu/GLM    │             │
+│  │  Papers/...) │  │              │  │ OpenAI/...)  │             │
 │  │  Quota/...)  │  │              │  │ OpenAI/...)  │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
@@ -148,8 +160,8 @@
 
 ### 1. 克隆项目
 ```bash
-git clone https://github.com/quitedob/go-deep-research.git
-cd go-deep-research
+git clone https://github.com/quitedob/deepresearch-platform.git
+cd deepresearch-platform
 ```
 
 ### 2. 配置环境变量
@@ -219,7 +231,7 @@ ADMIN_PASSWORD=your_secure_password
 ## 📁 项目结构
 
 ```
-go-deep-research/
+deepresearch-platform/
 ├── src/
 │   ├── cmd/server/          # 应用入口
 │   ├── configs/             # 配置文件
@@ -296,6 +308,20 @@ go-deep-research/
 | GET | `/export/:session_id` | 导出研究结果 |
 | GET | `/search` | 搜索研究记录 |
 | GET | `/statistics` | 获取研究统计 |
+
+### 📄 论文生成 (`/api/v1/paper`)
+| 方法 | 端点 | 描述 |
+|------|------|------|
+| GET | `/templates` | 获取论文模板列表 |
+| GET | `/citation-styles` | 获取引用样式列表 |
+| POST | `/start` | 开始生成论文 |
+| GET | `/status/:id` | 获取论文生成状态 |
+| GET | `/result/:id` | 获取论文内容 |
+| GET | `/export/:id` | 导出论文 |
+| GET | `/list` | 获取论文列表 |
+| DELETE | `/:id` | 删除论文 |
+| POST | `/regenerate` | 重新生成章节 |
+| GET | `/stream/:id` | 流式获取生成进度 |
 
 ### 📝 AI题目生成 (`/api/v1/ai`)
 | 方法 | 端点 | 描述 |
@@ -381,6 +407,7 @@ go-deep-research/
 | **深度思考** | 🧠 Deep Think | `getDeepThinkingModel()` | 自动切换到推理模型（deepseek-reasoner/glm-4.7） |
 | **联网搜索** | 🌐 Web Search | `ChatWebSearch()` + `WebSearchTool` | 调用智谱AI web_search 获取实时信息 |
 | **深度研究** | 🔬 Deep Research | `ResearchAgent` 多智能体系统 | 规划→执行→评估→报告全流程 |
+| **论文生成** | 📄 Generate Paper | `PaperAPI` + 模板系统 | 支持多种学术格式，智能引用生成 |
 
 ### 研究流程详解
 ```
@@ -390,6 +417,18 @@ go-deep-research/
 │  3. Evaluator Agent  - 评估信息质量和相关性                 │
 │  4. Critic Agent     - 批评分析，找出遗漏                  │
 │  5. Report Agent     - 生成结构化报告                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 论文生成流程
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. 选择模板        - APA/MLA/Chicago/IEEE                 │
+│  2. 输入主题        - 论文题目和研究方向                    │
+│  3. 生成大纲        - 自动生成章节结构                      │
+│  4. 逐章生成        - 使用 LLM 生成各章节内容              │
+│  5. 智能引用        - 自动生成符合规范的引用               │
+│  6. 导出论文        - Markdown/PDF 格式                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -408,8 +447,9 @@ go-deep-research/
 3. **智能上下文管理** - 自动监控 token 使用，智能总结
 4. **完整的会员体系** - 配额管理、激活码、自动重置
 5. **AI 题目生成** - 支持多种题型，智能防重复
-6. **MCP 工具集成** - 可扩展的工具系统
-7. **GLM Coding Plan 支持** - 专为编程优化的 API 端点
+6. **AI 论文生成** - 多种学术格式，智能引用系统
+7. **MCP 工具集成** - 可扩展的工具系统
+8. **GLM Coding Plan 支持** - 专为编程优化的 API 端点
 
 ## 🚀 快速测试
 
@@ -438,6 +478,12 @@ curl -X POST http://localhost:8080/api/v1/research/start \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <TOKEN>" \
   -d '{"query":"Go语言的最新发展","mode":"deep"}'
+
+# 5. 生成论文
+curl -X POST http://localhost:8080/api/v1/paper/start \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -d '{"title":"人工智能的发展","template":"apa","citation_style":"apa"}'
 ```
 
 ## 🔧 GLM Coding Plan 配置

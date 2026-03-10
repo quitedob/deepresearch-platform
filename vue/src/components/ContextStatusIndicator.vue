@@ -73,6 +73,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useChatStore } from '@/store';
 import { chatAPI } from '@/api/index';
+import { CONTEXT_REFRESH_INTERVAL } from '@/utils/config';
 
 const props = defineProps({
   sessionId: String,
@@ -190,8 +191,8 @@ watch(() => chatStore.messages.length, loadContextStatus);
 
 onMounted(() => {
   loadContextStatus();
-  // 每30秒刷新一次状态
-  refreshInterval = setInterval(loadContextStatus, 30000);
+  // 定期刷新状态
+  refreshInterval = setInterval(loadContextStatus, CONTEXT_REFRESH_INTERVAL);
 });
 
 onUnmounted(() => {

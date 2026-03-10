@@ -16,6 +16,7 @@ import (
 	"github.com/ai-research-platform/internal/pkg"
 	"github.com/ai-research-platform/internal/repository/dao"
 	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/ai-research-platform/internal/types/constant"
 	"gorm.io/datatypes"
 )
 
@@ -150,10 +151,10 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 	modelName := req.Model
 	provider := req.Provider
 	if modelName == "" {
-		modelName = "deepseek-chat"
+		modelName = constant.DefaultModel
 	}
 	if provider == "" {
-		provider = "deepseek"
+		provider = constant.DefaultProvider
 	}
 
 	// 如果启用网络搜索，先搜索相关知识背景（使用较短的超时）
@@ -555,10 +556,10 @@ func (a *AIQuestionAPI) CreateSession(c *gin.Context) {
 
 	// 设置默认值
 	if req.Provider == "" {
-		req.Provider = "deepseek"
+		req.Provider = constant.DefaultProvider
 	}
 	if req.Model == "" {
-		req.Model = "deepseek-chat"
+		req.Model = constant.DefaultModel
 	}
 	if req.Title == "" {
 		req.Title = "新的出题会话"

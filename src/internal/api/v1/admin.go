@@ -13,6 +13,7 @@ import (
 	"github.com/ai-research-platform/internal/pkg"
 	"github.com/ai-research-platform/internal/repository/dao"
 	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // AdminAPI 管理员API
@@ -169,7 +170,7 @@ func (api *AdminAPI) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	if req.Status != "active" && req.Status != "banned" {
+	if req.Status != constant.UserStatusActive && req.Status != constant.UserStatusBanned {
 		pkg.BadRequest(c, "无效的状态值")
 		return
 	}
@@ -206,7 +207,7 @@ func (api *AdminAPI) UpdateUserMembership(c *gin.Context) {
 		return
 	}
 
-	if req.MembershipType == "premium" {
+	if req.MembershipType == constant.MembershipPremium {
 		if req.ValidDays <= 0 {
 			req.ValidDays = 30
 		}
@@ -325,8 +326,8 @@ func (api *AdminAPI) ExportUserChatHistory(c *gin.Context) {
 	}
 
 	// 限制导出的会话数量，防止内存溢出
-	const maxExportSessions = 100
-	const maxMessagesPerSession = 500
+	maxExportSessions := constant.MaxExportSessions
+	maxMessagesPerSession := constant.MaxMessagesPerSession
 
 	// 获取聊天会话（限制数量）
 	sessions, err := api.chatDAO.ListSessionsByUserID(c.Request.Context(), userID, maxExportSessions, 0)
@@ -956,7 +957,7 @@ func (api *AdminAPI) BatchUpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	if req.Status != "active" && req.Status != "banned" {
+	if req.Status != constant.UserStatusActive && req.Status != constant.UserStatusBanned {
 		pkg.BadRequest(c, "无效的状态值，只能是 active 或 banned")
 		return
 	}

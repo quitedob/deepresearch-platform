@@ -66,6 +66,7 @@ type ReliableTool struct {
 	rateLimiter  *rateLimiter
 	mu           sync.Mutex
 	cleanerOnce  sync.Once // 确保清理协程只启动一次
+	stopCleaner  context.CancelFunc // 用于停止后台清理协程
 }
 
 type dedupEntry struct {
@@ -257,7 +258,9 @@ func (t *ReliableTool) checkDedup(inputHash string) string {
 func (t *ReliableTool) cacheResult(inputHash, result string) {
 	// 启动后台清理协程（只执行一次）
 	t.cleanerOnce.Do(func() {
-		go t.startDedupCleaner()
+		ctx, cancel := context.WithCancel(context.Background())
+		t.stopCleaner = cancel
+		go t.startDedupCleaner(ctx)
 	})
 
 	// 检查容量，超出时先清理过期条目
@@ -279,13 +282,26 @@ func (t *ReliableTool) cacheResult(inputHash, result string) {
 	t.mu.Unlock()
 }
 
-// startDedupCleaner 后台定期清理过期缓存
-func (t *ReliableTool) startDedupCleaner() {
+// startDedupCleaner 后台定期清理过期缓存（可通过 Close 停止）
+func (t *ReliableTool) startDedupCleaner(ctx context.Context) {
 	ticker := time.NewTicker(t.config.DedupTTL)
 	defer ticker.Stop()
-	for range ticker.C {
-		t.evictExpired()
+	for {
+		select {
+		case <-ticker.C:
+			t.evictExpired()
+		case <-ctx.Done():
+			return
+		}
 	}
+}
+
+// Close 停止后台清理协程，释放资源
+func (t *ReliableTool) Close() error {
+	if t.stopCleaner != nil {
+		t.stopCleaner()
+	}
+	return nil
 }
 
 // evictExpired 清理过期缓存条目

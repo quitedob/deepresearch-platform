@@ -373,124 +373,27 @@ const alertRule = ref({
   notify_slack: false
 })
 
-// 系统概览数据
+// 系统概览数据 - 通过 API 获取
 const systemOverview = ref({
-  cpu_usage: 65,
-  cpu_trend: 2.3,
-  memory_usage: 78,
-  memory_trend: -1.2,
-  disk_usage: 45,
-  disk_trend: 0.5,
-  network_in: 1048576, // 1MB/s
-  network_out: 524288,  // 512KB/s
-  network_connections: 156
+  cpu_usage: 0,
+  cpu_trend: 0,
+  memory_usage: 0,
+  memory_trend: 0,
+  disk_usage: 0,
+  disk_trend: 0,
+  network_in: 0,
+  network_out: 0,
+  network_connections: 0
 })
 
-// 服务状态数据
-const services = ref([
-  {
-    name: 'API服务',
-    status: 'healthy',
-    response_time: 120,
-    uptime: 99.9,
-    requests_per_sec: 245
-  },
-  {
-    name: '数据库',
-    status: 'healthy',
-    response_time: 15,
-    uptime: 99.99,
-    requests_per_sec: 1250
-  },
-  {
-    name: 'Redis缓存',
-    status: 'warning',
-    response_time: 2,
-    uptime: 98.5,
-    requests_per_sec: 3200
-  },
-  {
-    name: '消息队列',
-    status: 'healthy',
-    response_time: 8,
-    uptime: 99.8,
-    requests_per_sec: 180
-  },
-  {
-    name: '文件存储',
-    status: 'error',
-    response_time: 5000,
-    uptime: 85.2,
-    requests_per_sec: 45
-  }
-])
+// 服务状态数据 - 通过 API 获取
+const services = ref([])
 
-// 告警数据
-const alerts = ref([
-  {
-    id: 1,
-    title: '文件存储服务响应超时',
-    message: '文件存储服务响应时间超过5秒，可能影响文件上传下载功能',
-    severity: 'critical',
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    acknowledged: false
-  },
-  {
-    id: 2,
-    title: 'Redis缓存内存使用率过高',
-    message: 'Redis缓存内存使用率达到85%，建议清理过期数据或扩容',
-    severity: 'warning',
-    timestamp: new Date(Date.now() - 1000 * 60 * 15),
-    acknowledged: false
-  },
-  {
-    id: 3,
-    title: 'API服务QPS异常',
-    message: 'API服务请求量突增，当前QPS为245，正常值为150左右',
-    severity: 'info',
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-    acknowledged: true
-  }
-])
+// 告警数据 - 通过 API 获取
+const alerts = ref([])
 
-// 日志数据
-const logs = ref([
-  {
-    id: 1,
-    timestamp: new Date(Date.now() - 1000 * 60 * 2),
-    level: 'error',
-    source: 'api',
-    message: 'File storage service timeout after 5000ms'
-  },
-  {
-    id: 2,
-    timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    level: 'warning',
-    source: 'cache',
-    message: 'Redis memory usage reached 85%'
-  },
-  {
-    id: 3,
-    timestamp: new Date(Date.now() - 1000 * 60 * 8),
-    level: 'info',
-    source: 'api',
-    message: 'User login successful: user@example.com'
-  },
-  {
-    id: 4,
-    timestamp: new Date(Date.now() - 1000 * 60 * 12),
-    level: 'debug',
-    source: 'database',
-    message: 'Query executed in 15ms: SELECT * FROM users WHERE id = ?'
-  },
-  {
-    id: 5,
-    timestamp: new Date(Date.now() - 1000 * 60 * 15),
-    level: 'error',
-    source: 'queue',
-    message: 'Failed to process message: Invalid message format'
-  }
-])
+// 日志数据 - 通过 API 获取
+const logs = ref([])
 
 // 定时器
 let refreshTimer = null
@@ -525,25 +428,19 @@ const canCreateAlert = computed(() => {
 const refreshAllData = async () => {
   refreshing.value = true
   try {
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    // TODO: 接入实际监控 API（如 Prometheus /api/v1/query）
+    // const [overview, serviceStatus, alertList, logList] = await Promise.all([
+    //   monitoringAPI.getSystemOverview(),
+    //   monitoringAPI.getServiceStatus(),
+    //   monitoringAPI.getAlerts(),
+    //   monitoringAPI.getLogs({ level: logLevel.value, source: logSource.value })
+    // ])
+    // systemOverview.value = overview
+    // services.value = serviceStatus
+    // alerts.value = alertList
+    // logs.value = logList
 
-    // 更新系统概览数据
-    systemOverview.value = {
-      ...systemOverview.value,
-      cpu_usage: Math.floor(Math.random() * 30) + 50,
-      memory_usage: Math.floor(Math.random() * 20) + 70,
-      disk_usage: Math.floor(Math.random() * 10) + 40,
-      network_in: Math.floor(Math.random() * 2048576) + 524288,
-      network_out: Math.floor(Math.random() * 1048576) + 262144,
-      network_connections: Math.floor(Math.random() * 100) + 100
-    }
-
-    // 更新服务状态
-    services.value.forEach(service => {
-      service.response_time = Math.floor(Math.random() * 200) + 50
-      service.requests_per_sec = Math.floor(Math.random() * 500) + 100
-    })
+    console.log('监控数据刷新完成（待接入实际 API）')
   } catch (error) {
     console.error('刷新数据失败:', error)
   } finally {

@@ -57,6 +57,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { getMembership, getQuota, activateCode } from '@/api/membership'
+import { daysUntilExpiry } from '@/utils/timeFormat'
 
 const membership = ref({ membership_type: 'free' })
 const quota = ref({ chat_remaining: 0, chat_limit: 10, research_remaining: 0, research_limit: 1 })
@@ -93,12 +94,10 @@ const loadQuota = async () => {
 
 const formatExpires = (dateStr) => {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const days = Math.ceil((date - now) / (1000 * 60 * 60 * 24))
+  const days = daysUntilExpiry(dateStr)
   if (days <= 0) return '已过期'
   if (days <= 7) return `${days}天后到期`
-  return `${date.toLocaleDateString('zh-CN')} 到期`
+  return `${new Date(dateStr).toLocaleDateString('zh-CN')} 到期`
 }
 
 const formatTime = (dateStr) => {

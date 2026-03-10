@@ -409,13 +409,33 @@ const suggestions = ref([])
 const showSuggestions = ref(false)
 const suggestionTimer = ref(null)
 
-// 搜索历史
+// 搜索历史 - 从 localStorage 加载
 const showSearchHistory = ref(false)
-const searchHistory = ref([
-  { query: '机器学习算法', timestamp: new Date(Date.now() - 1000 * 60 * 30), results: 156 },
-  { query: 'Vue.js 教程', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), results: 89 },
-  { query: 'Python 数据分析', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), results: 234 }
-])
+const searchHistory = ref([])
+
+// 从 localStorage 加载搜索历史
+const loadSearchHistory = () => {
+  try {
+    const saved = localStorage.getItem('search_history')
+    if (saved) {
+      searchHistory.value = JSON.parse(saved).map(item => ({
+        ...item,
+        timestamp: new Date(item.timestamp)
+      }))
+    }
+  } catch (e) {
+    searchHistory.value = []
+  }
+}
+
+// 保存搜索历史到 localStorage
+const saveSearchHistory = () => {
+  try {
+    localStorage.setItem('search_history', JSON.stringify(searchHistory.value))
+  } catch (e) {
+    console.warn('保存搜索历史失败:', e)
+  }
+}
 
 // 保存搜索
 const showSaveSearchModal = ref(false)
@@ -433,64 +453,6 @@ const popularSearches = ref([
   'Web开发',
   '云计算'
 ])
-
-// 模拟搜索结果数据
-const mockSearchResults = [
-  {
-    id: 1,
-    title: 'Vue.js 3.0 完整教程',
-    description: '这是一个全面的Vue.js 3.0教程，涵盖了组合式API、响应式系统、路由管理等核心概念。',
-    type: 'document',
-    source: '知识库',
-    date: new Date('2024-03-15'),
-    score: 0.95,
-    url: 'https://example.com/vue-tutorial',
-    snippets: [
-      'Vue.js 3.0 引入了 Composition API，它提供了一种更灵活的方式来组织组件逻辑...',
-      '响应式系统是 Vue.js 的核心特性之一，它能够自动追踪依赖关系并在数据变化时更新 DOM。'
-    ],
-    tags: ['Vue.js', '前端', 'JavaScript', '教程'],
-    metadata: {
-      作者: '张三',
-      字数: '5000',
-      阅读时间: '15分钟'
-    }
-  },
-  {
-    id: 2,
-    title: '机器学习算法详解',
-    description: '深入理解各种机器学习算法的原理、实现和应用场景，包括监督学习、无监督学习和强化学习。',
-    type: 'document',
-    source: '文档库',
-    date: new Date('2024-03-10'),
-    score: 0.88,
-    url: 'https://example.com/ml-algorithms',
-    snippets: [
-      '机器学习是人工智能的一个分支，它使计算机能够在没有明确编程的情况下学习和改进。'
-    ],
-    tags: ['机器学习', 'AI', '算法', '数据科学'],
-    metadata: {
-      作者: '李四',
-      字数: '8000',
-      阅读时间: '25分钟'
-    }
-  },
-  {
-    id: 3,
-    title: 'Python数据分析实战',
-    description: '使用Python进行数据分析的完整指南，包括pandas、numpy、matplotlib等库的使用。',
-    type: 'web',
-    source: '网络资源',
-    date: new Date('2024-03-08'),
-    score: 0.82,
-    url: 'https://example.com/python-data-analysis',
-    tags: ['Python', '数据分析', 'pandas', 'numpy'],
-    metadata: {
-      网站: '数据科学博客',
-      评分: '4.8/5.0'
-    }
-  }
-]
 
 // 计算属性
 const totalPages = computed(() => {
@@ -520,16 +482,20 @@ const performSearch = async () => {
   const startTime = Date.now()
 
   try {
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    // TODO: 接入实际搜索 API，当前为占位实现
+    // const response = await searchAPI.search({
+    //   query: searchQuery.value,
+    //   scope: searchScope.value,
+    //   filters: showAdvancedSearch.value ? advancedFilters.value : {},
+    //   page: currentPage.value,
+    //   page_size: pageSize.value
+    // })
+    // searchResults.value = response.data.results
+    // totalResults.value = response.data.total
 
-    // 模拟搜索结果
-    searchResults.value = mockSearchResults.map(result => ({
-      ...result,
-      score: Math.random() * 0.3 + 0.7
-    }))
-
-    totalResults.value = mockSearchResults.length
+    // 占位：无后端搜索 API 时返回空结果
+    searchResults.value = []
+    totalResults.value = 0
     searchTime.value = Date.now() - startTime
 
     // 添加到搜索历史
@@ -539,6 +505,7 @@ const performSearch = async () => {
         timestamp: new Date(),
         results: totalResults.value
       })
+      saveSearchHistory()
     }
 
     currentPage.value = 1
@@ -645,6 +612,7 @@ const removeHistoryItem = (index) => {
 const clearSearchHistory = () => {
   if (confirm('确定要清空搜索历史吗？')) {
     searchHistory.value = []
+    saveSearchHistory()
   }
 }
 
@@ -737,7 +705,7 @@ document.addEventListener('click', (e) => {
 
 // 生命周期
 onMounted(() => {
-  // 初始化
+  loadSearchHistory()
 })
 </script>
 

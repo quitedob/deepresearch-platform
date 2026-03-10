@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/ai-research-platform/internal/types/constant"
 	"gorm.io/gorm"
 )
 
@@ -141,8 +142,8 @@ func (d *AIQuestionDAO) GetConfig(ctx context.Context) (*model.AIQuestionConfig,
 	if err == gorm.ErrRecordNotFound {
 		// 返回默认配置
 		return &model.AIQuestionConfig{
-			DefaultProvider: "deepseek",
-			DefaultModel:    "deepseek-chat",
+			DefaultProvider: constant.DefaultProvider,
+			DefaultModel:    constant.DefaultModel,
 		}, nil
 	}
 	if err != nil {

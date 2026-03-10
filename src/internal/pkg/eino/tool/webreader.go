@@ -14,10 +14,12 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 const (
-	webReaderMCPEndpoint = "https://open.bigmodel.cn/api/mcp/web_reader/mcp"
+	webReaderMCPEndpoint = constant.ZhipuWebReaderMCPEndpoint
 )
 
 // WebReaderTool Web Reader MCP 工具，提供网页内容抓取能力

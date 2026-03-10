@@ -275,6 +275,7 @@ watch(
 @media (max-width: 768px) {
   .chat-header {
     padding: var(--spacing-sm) var(--spacing-md);
+    padding-left: 56px; /* 为汉堡菜单按钮留出空间 */
     flex-wrap: wrap;
     gap: var(--spacing-sm);
   }
@@ -293,7 +294,7 @@ watch(
   }
 
   .scenario-cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-sm);
     padding: 0 var(--spacing-sm);
   }
@@ -306,11 +307,12 @@ watch(
 @media (max-width: 480px) {
   .chat-container {
     min-height: 100vh;
-    min-height: 100dvh; /* 动态视口高度，适配移动端浏览器 */
+    min-height: 100dvh;
   }
 
   .chat-header {
     padding: var(--spacing-xs) var(--spacing-sm);
+    padding-left: 52px;
   }
 
   .scroll-area {
@@ -331,6 +333,7 @@ watch(
   }
   
   .scenario-cards {
+    grid-template-columns: 1fr;
     max-width: 100%;
   }
 }

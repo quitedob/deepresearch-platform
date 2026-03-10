@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/ai-research-platform/internal/infrastructure/config"
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // Config ChatModel 配置
@@ -127,20 +128,8 @@ func DefaultConfig(providerType string) Config {
 		}
 	}
 
-	// 根据 provider 设置默认 BaseURL
-	var baseURL string
-	switch providerType {
-	case "deepseek":
-		baseURL = "https://api.deepseek.com/v1"
-	case "zhipu":
-		baseURL = "https://open.bigmodel.cn/api/paas/v4"
-	case "openai":
-		baseURL = "https://api.z.ai/api/coding/paas/v4"
-	case "ollama":
-		baseURL = "http://localhost:11434/v1"
-	case "openrouter":
-		baseURL = "https://openrouter.ai/api/v1"
-	}
+	// 根据 provider 设置默认 BaseURL（使用集中定义的常量）
+	baseURL := constant.ProviderBaseURLWithVersion(providerType)
 
 	return Config{
 		Provider:    providerType,

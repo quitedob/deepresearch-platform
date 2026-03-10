@@ -5,6 +5,7 @@ import (
 
 	"github.com/ai-research-platform/internal/infrastructure/config"
 	"github.com/ai-research-platform/internal/pkg/llm/provider"
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // ProviderFactory 提供商工厂
@@ -91,22 +92,8 @@ func (f *ProviderFactory) GetProviderInfo(providerName string) (*ProviderInfo, e
 	}
 
 	// 根据提供商设置基础URL和其他属性
-	var baseURL string
-	var requiresAPIKey bool
-	switch providerName {
-	case "deepseek":
-		baseURL = "https://api.deepseek.com"
-		requiresAPIKey = true
-	case "zhipu":
-		baseURL = "https://open.bigmodel.cn"
-		requiresAPIKey = true
-	case "openai":
-		baseURL = "https://api.z.ai/api/coding/paas/v4"
-		requiresAPIKey = true
-	case "ollama":
-		baseURL = "http://localhost:11434"
-		requiresAPIKey = false
-	}
+	baseURL := constant.ProviderBaseURL(providerName)
+	requiresAPIKey := constant.ProviderRequiresAPIKey(providerName)
 
 	return &ProviderInfo{
 		Name:           providerName,

@@ -312,15 +312,18 @@ func (o *ParallelOrchestrator) getToolsForStrategy(strategy string) []string {
 	}
 }
 
-// executeParallel 并行执行所有子Agent任务
+// executeParallel 并行执行所有子Agent任务（限制最多 MaxParallelAgents 个并发）
 func (o *ParallelOrchestrator) executeParallel(ctx context.Context, tasks []SubAgentTask) []SubAgentResult {
 	results := make([]SubAgentResult, len(tasks))
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, MaxParallelAgents)
 
 	for i, task := range tasks {
 		wg.Add(1)
+		sem <- struct{}{} // 获取信号量，超过 MaxParallelAgents 时阻塞
 		go func(idx int, t SubAgentTask) {
 			defer wg.Done()
+			defer func() { <-sem }() // 释放信号量
 
 			o.emit(&ProgressEvent{
 				Stage: "executing", Progress: 0.15 + float32(idx)*0.05,

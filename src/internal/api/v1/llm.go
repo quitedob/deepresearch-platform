@@ -8,6 +8,7 @@ import (
 	"github.com/ai-research-platform/internal/infrastructure/config"
 	"github.com/ai-research-platform/internal/repository/dao"
 	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 // LLMAPI LLM API
@@ -134,35 +135,17 @@ func (l *LLMAPI) ListProviders(c *gin.Context) {
 		}
 
 		// 设置 provider 特定属性
-		switch providerName {
-		case "deepseek":
-			providerInfo["description"] = "DeepSeek AI - 高性能大语言模型"
-			providerInfo["base_url"] = "https://api.deepseek.com"
-			providerInfo["requires_key"] = true
-			providerInfo["icon"] = "🚀"
-		case "zhipu":
-			providerInfo["description"] = "智谱AI - GLM系列大语言模型"
-			providerInfo["base_url"] = "https://open.bigmodel.cn"
-			providerInfo["requires_key"] = true
-			providerInfo["icon"] = "🧠"
-		case "ollama":
-			providerInfo["description"] = "Ollama - 本地部署的开源大语言模型"
-			providerInfo["base_url"] = "http://localhost:11434"
-			providerInfo["requires_key"] = false
-			providerInfo["icon"] = "🦙"
-		case "openai":
-			providerInfo["description"] = "OpenAI兼容 - GLM Coding Plan"
-			providerInfo["base_url"] = "https://api.z.ai/api/coding/paas/v4"
-			providerInfo["requires_key"] = true
-			providerInfo["icon"] = "🔮"
-		case "openrouter":
-			providerInfo["description"] = "OpenRouter - 统一API访问400+模型"
-			providerInfo["base_url"] = "https://openrouter.ai/api/v1"
-			providerInfo["requires_key"] = true
-			providerInfo["icon"] = "🌐"
-		default:
+		// 使用集中定义的常量
+		if desc, ok := constant.ProviderDescriptions[providerName]; ok {
+			providerInfo["description"] = desc
+		} else {
 			providerInfo["description"] = "LLM Provider"
-			providerInfo["requires_key"] = true
+		}
+		providerInfo["base_url"] = constant.ProviderBaseURL(providerName)
+		providerInfo["requires_key"] = constant.ProviderRequiresAPIKey(providerName)
+		if icon, ok := constant.ProviderIcons[providerName]; ok {
+			providerInfo["icon"] = icon
+		} else {
 			providerInfo["icon"] = "🤖"
 		}
 

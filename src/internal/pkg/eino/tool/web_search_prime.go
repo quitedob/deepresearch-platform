@@ -14,10 +14,12 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/ai-research-platform/internal/types/constant"
 )
 
 const (
-	webSearchPrimeMCPEndpoint = "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp"
+	webSearchPrimeMCPEndpoint = constant.ZhipuWebSearchPrimeMCPEndpoint
 )
 
 // WebSearchPrimeTool Web Search Prime MCP 工具
