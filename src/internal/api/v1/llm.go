@@ -40,9 +40,12 @@ func (l *LLMAPI) ListProviders(c *gin.Context) {
 	// 必须有 modelConfigDAO 才能动态获取配置
 	if l.modelConfigDAO == nil {
 		c.JSON(http.StatusOK, gin.H{
-			"providers": providers,
-			"count":     0,
-			"message":   "模型配置DAO未初始化",
+			"success": true,
+			"data": gin.H{
+				"providers": providers,
+				"count":     0,
+				"message":   "模型配置DAO未初始化",
+			},
 		})
 		return
 	}
@@ -153,28 +156,63 @@ func (l *LLMAPI) ListProviders(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"providers": providers,
-		"count":     len(providers),
+		"success": true,
+		"data": gin.H{
+			"providers": providers,
+			"count":     len(providers),
+		},
 	})
 }
 
-// ListModels 获取所有可用模型
+// ListModels 获取所有可用模型（优先从数据库读取启用的模型配置）
 func (l *LLMAPI) ListModels(c *gin.Context) {
 	models := make([]gin.H, 0)
 	modelsConfig := config.GetModelsConfig()
 
+	// 优先从数据库获取启用的模型
+	if l.modelConfigDAO != nil {
+		enabledModels, err := l.modelConfigDAO.GetEnabledModels(c.Request.Context())
+		if err == nil && len(enabledModels) > 0 {
+			for _, m := range enabledModels {
+				description := m.DisplayName
+				if description == "" {
+					description = "LLM模型"
+				}
+
+				// 从 YAML 配置补充元数据
+				if modelsConfig != nil {
+					if modelMeta, ok := modelsConfig.Models[m.ModelName]; ok {
+						if modelMeta.Description != "" {
+							description = modelMeta.Description
+						}
+					}
+				}
+
+				models = append(models, gin.H{
+					"name":        m.ModelName,
+					"provider":    m.Provider,
+					"description": description,
+					"available":   true,
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"models": models, "count": len(models)}})
+			return
+		}
+	}
+
+	// 回退：从运行时注册的模型获取
 	if l.llmScheduler != nil {
 		registeredModels := l.llmScheduler.GetRegisteredModels()
 		for modelName, providerName := range registeredModels {
 			description := "LLM模型"
-			
+
 			// 从配置文件获取模型描述
 			if modelsConfig != nil {
 				if modelMeta, ok := modelsConfig.Models[modelName]; ok {
 					description = modelMeta.Description
 				}
 			}
-			
+
 			models = append(models, gin.H{
 				"name":        modelName,
 				"provider":    providerName,
@@ -184,7 +222,7 @@ func (l *LLMAPI) ListModels(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"models": models, "count": len(models)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"models": models, "count": len(models)}})
 }
 
 // TestProvider 测试LLM提供商

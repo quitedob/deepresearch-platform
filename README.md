@@ -166,7 +166,7 @@ cd deepresearch-platform
 
 ### 2. 配置环境变量
 ```bash
-cp .env.example .env
+cp .env .env
 # 编辑 .env 文件，填入你的 API Keys
 ```
 

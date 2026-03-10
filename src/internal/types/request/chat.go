@@ -3,7 +3,7 @@ package request
 // CreateChatSessionRequest 创建聊天会话请求
 type CreateChatSessionRequest struct {
     Title        string `json:"title,omitempty" binding:"max=200"`
-    LLMProvider  string `json:"llm_provider" binding:"required,oneof=deepseek zhipu ollama"`
+    LLMProvider  string `json:"llm_provider" binding:"required,oneof=deepseek zhipu ollama openai openrouter"`
     ModelName    string `json:"model_name" binding:"required"`
     ModelType    string `json:"model_type,omitempty" binding:"omitempty,oneof=default deep research"` // 模型类型：default, deep, research
     SystemPrompt string `json:"system_prompt,omitempty" binding:"max=5000"`

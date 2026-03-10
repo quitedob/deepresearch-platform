@@ -157,15 +157,15 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 		provider = constant.DefaultProvider
 	}
 
-	// 如果启用网络搜索，先搜索相关知识背景（使用较短的超时）
+	// 如果启用网络搜索，先搜索相关知识背景（使用独立的超时上下文）
 	var searchContext string
 	if req.UseWebSearch && a.webSearchTool != nil {
 		// 从用户提示中提取搜索关键词
 		searchQuery := extractSearchQuery(req.Prompt)
 		if searchQuery != "" {
 			fmt.Printf("[AI出题] 开始网络搜索: %s\n", searchQuery)
-			// 搜索使用20秒超时
-			searchCtx, searchCancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+			// 搜索使用独立的超时上下文，避免取消影响后续LLM调用
+			searchCtx, searchCancel := context.WithTimeout(context.Background(), 20*time.Second)
 			searchArgs, _ := json.Marshal(map[string]string{"query": searchQuery})
 			searchResult, err := a.webSearchTool.InvokableRun(searchCtx, string(searchArgs))
 			searchCancel()
@@ -180,8 +180,8 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 		}
 	}
 
-	// 设置LLM调用的超时上下文
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
+	// 设置LLM调用的超时上下文（使用独立上下文，防止客户端断开导致context canceled）
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	// 构建系统提示 - 包含JSON格式要求

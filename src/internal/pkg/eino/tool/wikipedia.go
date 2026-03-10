@@ -30,6 +30,7 @@ type WikipediaConfig struct {
 }
 
 // NewWikipediaTool 创建 Wikipedia 工具
+// 支持 HTTP_PROXY/HTTPS_PROXY 环境变量，解决中国大陆无法直接访问维基百科的问题
 func NewWikipediaTool(config WikipediaConfig) *WikipediaTool {
 	if config.Language == "" {
 		config.Language = "zh"
@@ -37,10 +38,14 @@ func NewWikipediaTool(config WikipediaConfig) *WikipediaTool {
 	if config.Timeout == 0 {
 		config.Timeout = 30 * time.Second
 	}
+
+	// Clone default transport to inherit HTTP_PROXY/HTTPS_PROXY environment variable support
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
 	return &WikipediaTool{
 		language: config.Language,
 		timeout:  config.Timeout,
-		client:   &http.Client{Timeout: config.Timeout},
+		client:   &http.Client{Timeout: config.Timeout, Transport: transport},
 	}
 }
 
@@ -83,10 +88,10 @@ func (t *WikipediaTool) InvokableRun(ctx context.Context, argumentsInJSON string
 
 	content, err := t.getPageContent(ctx, args.Query, language)
 	if err != nil {
-		return fmt.Sprintf("查询失败: %v", err), nil
+		return "", fmt.Errorf("wikipedia查询失败: %w", err)
 	}
 	if content == "" {
-		return fmt.Sprintf("未找到关于'%s'的维基百科页面", args.Query), nil
+		return "", fmt.Errorf("未找到关于'%s'的维基百科页面", args.Query)
 	}
 	return content, nil
 }

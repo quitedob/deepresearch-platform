@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"github.com/ai-research-platform/internal/logger"
 	"github.com/ai-research-platform/internal/pkg/eino"
 	"github.com/ai-research-platform/internal/middleware"
 	"github.com/ai-research-platform/internal/pkg/llm/provider"
@@ -29,6 +31,7 @@ type ChatAPI struct {
 	membershipDAO      *dao.MembershipDAO
 	modelConfigDAO     *dao.ModelConfigDAO
 	llmScheduler       *eino.LLMScheduler
+	toolsAPIKey        string // 工具 API Key（用于联网搜索等）
 }
 
 // NewChatAPI 创建聊天API
@@ -49,13 +52,14 @@ func NewChatAPIWithPreferences(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferenc
 }
 
 // NewChatAPIFull 创建完整的聊天API（包含会员和模型配置）
-func NewChatAPIFull(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferencesDAO, membershipDAO *dao.MembershipDAO, modelConfigDAO *dao.ModelConfigDAO, scheduler *eino.LLMScheduler) *ChatAPI {
+func NewChatAPIFull(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferencesDAO, membershipDAO *dao.MembershipDAO, modelConfigDAO *dao.ModelConfigDAO, scheduler *eino.LLMScheduler, toolsAPIKey string) *ChatAPI {
 	return &ChatAPI{
 		chatDAO:            chatDAO,
 		userPreferencesDAO: prefsDAO,
 		membershipDAO:      membershipDAO,
 		modelConfigDAO:     modelConfigDAO,
 		llmScheduler:       scheduler,
+		toolsAPIKey:        toolsAPIKey,
 	}
 }
 
@@ -914,7 +918,7 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 	}
 
 	// 1. 使用 WebSearchTool 进行网络搜索
-	webSearchTool := eino.CreateWebSearchTool()
+	webSearchTool := eino.CreateWebSearchTool(api.toolsAPIKey)
 	searchArgs := fmt.Sprintf(`{"query": "%s"}`, req.Message)
 	searchResult, searchErr := webSearchTool.InvokableRun(c.Request.Context(), searchArgs)
 	
@@ -1113,12 +1117,32 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 	streamCtx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Minute)
 	defer cancel()
 
+	// 先保存用户消息（无论LLM是否成功，用户消息都应保留在历史中）
+	if api.chatDAO != nil {
+		userMsg := &model.Message{
+			SessionID: req.SessionID,
+			Role:      constant.RoleUser,
+			Content:   req.Message,
+		}
+		if err := api.chatDAO.CreateMessage(c.Request.Context(), userMsg); err != nil {
+			logger.Error("保存用户消息失败", zap.Error(err))
+		}
+	}
+
 	if api.llmScheduler != nil {
 		reader, _, err := api.llmScheduler.StreamWithFallback(streamCtx, messages, modelName)
 		if err != nil {
 			refundQuota()
-			_, errMsg := friendlyLLMError(err)
+			errCode, errMsg := friendlyLLMError(err)
+			logger.Error("LLM流式调用失败",
+				zap.String("model", modelName),
+				zap.String("user_id", userID),
+				zap.String("session_id", req.SessionID),
+				zap.String("error_code", errCode),
+				zap.Error(err),
+			)
 			c.SSEvent("message", gin.H{"type": "error", "error": errMsg})
+			c.SSEvent("message", gin.H{"type": "end", "content": ""})
 			c.Writer.Flush()
 			return
 		}
@@ -1158,18 +1182,8 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 
 		fullContent := contentBuilder.String()
 
-		// 只有在有内容时才保存消息
+		// 保存助手回复（仅在有内容时）
 		if fullContent != "" && api.chatDAO != nil {
-			userMsg := &model.Message{
-				SessionID: req.SessionID,
-				Role:      constant.RoleUser,
-				Content:   req.Message,
-			}
-			if err := api.chatDAO.CreateMessage(c.Request.Context(), userMsg); err != nil {
-				// 记录错误但不中断流程
-				c.SSEvent("warning", gin.H{"warning": "保存用户消息失败"})
-			}
-
 			assistantMsg := &model.Message{
 				SessionID: req.SessionID,
 				Role:      constant.RoleAssistant,
@@ -1179,8 +1193,6 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 				c.SSEvent("warning", gin.H{"warning": "保存助手消息失败"})
 			}
 		}
-
-		// 配额已在请求开始时扣减，无需再次增加
 	} else {
 		content := "这是一个流式回复的示例。(LLM调度器未配置)"
 		for _, char := range content {

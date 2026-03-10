@@ -264,34 +264,43 @@ func main() {
 	var researchService *service.ResearchService
 	var researchTools []eino.InvokableTool // 提前声明，供 MCP API 复用
 
-	// 优先使用智谱AI模型进行深度研究（glm-4.7 或 glm-4.5-air）
-	if zhipuCfg, ok := cfg.LLM.Providers["zhipu"]; ok && zhipuCfg.APIKey != "" {
+	// 优先使用 OpenAI 兼容端点（api.z.ai）进行深度研究，默认 GLM-4.7
+	openaiCfg, openaiOk := cfg.LLM.Providers["openai"]
+	zhipuCfg, zhipuOk := cfg.LLM.Providers["zhipu"]
+
+	// 选择研究用的 API Key（OpenAI 端点也使用智谱 API Key）
+	var researchAPIKey string
+	var researchBaseURL string
+	if openaiOk && openaiCfg.APIKey != "" {
+		researchAPIKey = openaiCfg.APIKey
+		researchBaseURL = openaiCfg.BaseURL
+	} else if zhipuOk && zhipuCfg.APIKey != "" {
+		researchAPIKey = zhipuCfg.APIKey
+		researchBaseURL = openaiCfg.BaseURL // 仍使用 OpenAI 兼容端点
+	}
+
+	// 工具需要智谱 API Key（MCP 工具走智谱原生接口）
+	var toolsAPIKey string
+	if zhipuOk && zhipuCfg.APIKey != "" {
+		toolsAPIKey = zhipuCfg.APIKey
+	} else if openaiOk && openaiCfg.APIKey != "" {
+		toolsAPIKey = openaiCfg.APIKey
+	}
+
+	if researchAPIKey != "" {
 		log.Info("初始化深度研究服务...")
 
-		// 选择研究用的模型（优先使用 glm-4.7）
-		researchModelName := "glm-4.7"
-		if len(zhipuCfg.Models) > 0 {
-			// 检查是否有 glm-4.7
-			hasGLM47 := false
-			for _, m := range zhipuCfg.Models {
-				if m == "glm-4.7" {
-					hasGLM47 = true
-					break
-				}
-			}
-			if !hasGLM47 {
-				researchModelName = zhipuCfg.Models[0] // 使用第一个可用模型
-			}
-		}
+		// 默认使用 GLM-4.7 进行研究
+		researchModelName := "GLM-4.7"
 
-		// 创建研究用的ChatModel
-		researchChatModel, err := createZhipuModelWithJWT(zhipuCfg.APIKey, zhipuCfg.BaseURL, researchModelName)
+		// 创建研究用的ChatModel（通过 OpenAI 兼容接口）
+		researchChatModel, err := createOpenAICompatibleModel(researchAPIKey, researchBaseURL, researchModelName)
 		if err != nil {
 			log.Error("创建研究ChatModel失败", zap.Error(err))
 		} else if researchChatModel != nil {
 			// 创建研究工具（含 Web Search Prime MCP）
 			toolsConfig := eino.ToolsConfig{
-				WebSearchAPIKey:    zhipuCfg.APIKey,
+				WebSearchAPIKey:    toolsAPIKey,
 				ArxivMaxResults:    10,
 				WikipediaLanguage:  "zh",
 				Timeout:            60 * time.Second,
@@ -349,38 +358,26 @@ func main() {
 			log.Info("深度研究服务初始化成功（支持并行多Agent调研）")
 		}
 	} else {
-		log.Warn("智谱AI未配置，深度研究服务将不可用")
+		log.Warn("OpenAI/智谱AI未配置，深度研究服务将不可用")
 	}
 
 	// ==================== 初始化论文生成服务 ====================
 	var paperService *service.PaperService
 	var paperAPI *v1.PaperAPI
 
-	if zhipuCfg, ok := cfg.LLM.Providers["zhipu"]; ok && zhipuCfg.APIKey != "" && db != nil {
+	if researchAPIKey != "" && db != nil {
 		log.Info("初始化论文生成服务...")
 
-		// 选择论文生成用的模型（优先使用 glm-4.7）
-		paperModelName := "glm-4.7"
-		if len(zhipuCfg.Models) > 0 {
-			hasGLM47 := false
-			for _, m := range zhipuCfg.Models {
-				if m == "glm-4.7" {
-					hasGLM47 = true
-					break
-				}
-			}
-			if !hasGLM47 {
-				paperModelName = zhipuCfg.Models[0]
-			}
-		}
+		// 论文生成默认使用 GLM-4.7
+		paperModelName := "GLM-4.7"
 
-		paperChatModel, err := createZhipuModelWithJWT(zhipuCfg.APIKey, zhipuCfg.BaseURL, paperModelName)
+		paperChatModel, err := createOpenAICompatibleModel(researchAPIKey, researchBaseURL, paperModelName)
 		if err != nil {
 			log.Error("创建论文ChatModel失败", zap.Error(err))
 		} else if paperChatModel != nil {
 			// 创建论文工具
 			paperToolsConfig := eino.ToolsConfig{
-				WebSearchAPIKey:    zhipuCfg.APIKey,
+				WebSearchAPIKey:    toolsAPIKey,
 				ArxivMaxResults:    10,
 				WikipediaLanguage:  "zh",
 				Timeout:            60 * time.Second,
@@ -401,16 +398,16 @@ func main() {
 
 			// 创建PaperService
 			paperService = service.NewPaperService(paperRepo, paperAgent, log)
-			paperAPI = v1.NewPaperAPI(paperDAO, paperService)
+			paperAPI = v1.NewPaperAPIWithDAO(paperDAO, paperService, modelConfigDAO)
 			log.Info("论文生成服务初始化成功")
 		}
 	} else {
-		log.Warn("论文生成服务未初始化（需要智谱AI配置和数据库连接）")
+		log.Warn("论文生成服务未初始化（需要OpenAI/智谱AI配置和数据库连接）")
 	}
 
 	// 初始化API层
 	userAPI := v1.NewUserAPIEnhancedWithPreferences(jwtManager, nil, userDAO, userPreferencesDAO)
-	chatAPI := v1.NewChatAPIFull(chatDAO, userPreferencesDAO, membershipDAO, modelConfigDAO, llmScheduler)
+	chatAPI := v1.NewChatAPIFull(chatDAO, userPreferencesDAO, membershipDAO, modelConfigDAO, llmScheduler, toolsAPIKey)
 	researchAPI := v1.NewResearchAPI(researchDAO, researchService)
 	llmAPI := v1.NewLLMAPIWithDAO(llmScheduler, modelConfigDAO)
 	healthAPI := v1.NewHealthAPI(db, nil)

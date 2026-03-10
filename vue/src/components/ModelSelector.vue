@@ -129,36 +129,38 @@ const handleClickOutside = (event) => {
   }
 };
 
-// 页面可见性变化时刷新 providers（处理标签页切换）
+// 页面可见性变化时刷新 providers
 const handleVisibilityChange = () => {
   if (document.visibilityState === 'visible') {
     loadProviders(true);
   }
 };
 
-// 监听其他标签页的模型配置变更（通过 localStorage 事件）
 const handleStorageChange = (event) => {
   if (event.key === 'model_config_updated') {
     loadProviders(true);
   }
 };
 
-// 组件挂载
+const handleModelConfigUpdate = () => {
+  loadProviders(true);
+};
+
 onMounted(() => {
   document.addEventListener('mousedown', handleClickOutside);
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('storage', handleStorageChange);
+  window.addEventListener('model-config-updated', handleModelConfigUpdate);
   loadProviders();
 });
 
-// 组件卸载
 onUnmounted(() => {
   document.removeEventListener('mousedown', handleClickOutside);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   window.removeEventListener('storage', handleStorageChange);
+  window.removeEventListener('model-config-updated', handleModelConfigUpdate);
 });
 
-// 导出方法供外部使用
 defineExpose({
   getDeepThinkModel: () => currentProvider.value?.deep_think_model || '',
   getDefaultModel: () => currentProvider.value?.default_model || '',
@@ -333,7 +335,6 @@ defineExpose({
   font-family: monospace;
 }
 
-/* 移动端响应式 */
 @media (max-width: 768px) {
   .current-model-btn {
     min-width: 120px;

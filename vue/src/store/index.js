@@ -385,6 +385,9 @@ export const useChatStore = defineStore('chat', {
         // 更新当前会话ID
         this.activeSessionId = sessionId
 
+        // 消息加载完成后刷新上下文状态
+        this.fetchContextStatus(sessionId)
+
         // 同步会话的模型和提供商
         const session = this.sessions.find(s => s.id === sessionId)
         if (session) {

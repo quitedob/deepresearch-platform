@@ -36,7 +36,7 @@ fi
 # Check if .env file exists
 if [ ! -f .env ]; then
     print_warning ".env file not found, creating from .env.example"
-    cp .env.example .env
+    cp .env .env
 fi
 
 # Clean up any existing containers

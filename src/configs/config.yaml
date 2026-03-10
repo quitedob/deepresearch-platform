@@ -2,7 +2,7 @@ server:
   port: 8080
   env: development
   read_timeout: 30
-  write_timeout: 30
+  write_timeout: 0
 
 database:
   host: localhost
@@ -46,11 +46,12 @@ llm:
       max_tokens: 4096
     openai:
       api_key: "${OPENAI_API_KEY:}"
-      base_url: "${OPENAI_BASE_URL:https://api.openai.com/v1}"
+      base_url: "${OPENAI_BASE_URL:https://api.z.ai/api/coding/paas/v4}"
       models:
-        - gpt-4o
-        - gpt-4o-mini
-      default_model: gpt-4o-mini
+        - GLM-5
+        - GLM-4.5-air
+        - GLM-4.7
+      default_model: GLM-4.5-air
       temperature: 0.7
       max_tokens: 4096
     ollama:

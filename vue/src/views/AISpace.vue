@@ -20,8 +20,12 @@
             </div>
           </div>
           <div class="header-right">
-            <!-- 模型选择器 - 允许用户查看和切换AI模型 -->
-            <ModelSelector />
+            <!-- AI出题模型（由管理员在后台配置，不可用户选择） -->
+            <div class="admin-model-display" :title="'模型由管理员配置'">
+              <span class="admin-model-icon">🤖</span>
+              <span class="admin-model-name">{{ aiQuestionModel || '加载中...' }}</span>
+              <span class="admin-model-badge">管理员配置</span>
+            </div>
             <UserProfileMenu :current-theme="currentTheme" @toggle-theme="toggleTheme" />
           </div>
         </div>
@@ -241,7 +245,6 @@
 import { ref, nextTick, watch, onMounted, onUnmounted, computed } from 'vue';
 import Sidebar from '@/components/Sidebar.vue';
 import UserProfileMenu from '@/components/UserProfileMenu.vue';
-import ModelSelector from '@/components/ModelSelector.vue';
 import QuestionCard from '@/components/QuestionCard.vue';
 import { aiQuestionAPI } from '@/api/index';
 import { useChatStore } from '@/store';
@@ -252,6 +255,36 @@ const inputText = ref('');
 const inputRef = ref(null);
 const messagesContainer = ref(null);
 const isGenerating = ref(false);
+
+// AI出题模型配置（从 admin 后台获取）
+const aiQuestionProvider = ref('');
+const aiQuestionModelName = ref('');
+const aiQuestionModel = computed(() => {
+  if (aiQuestionModelName.value) {
+    return aiQuestionModelName.value;
+  }
+  return '';
+});
+
+// 加载 admin 配置的 AI 出题模型
+const loadAIQuestionConfig = async () => {
+  try {
+    const result = await aiQuestionAPI.getConfig();
+    const config = result.config || result;
+    if (config.default_provider) {
+      aiQuestionProvider.value = config.default_provider;
+    }
+    if (config.default_model) {
+      aiQuestionModelName.value = config.default_model;
+    }
+    console.log('[AISpace] 加载AI出题配置:', aiQuestionProvider.value, aiQuestionModelName.value);
+  } catch (error) {
+    console.warn('[AISpace] 获取AI出题配置失败，使用默认值:', error.message);
+    // 回退到 store 中的默认值
+    aiQuestionProvider.value = chatStore.currentProvider || 'deepseek';
+    aiQuestionModelName.value = chatStore.currentModel || 'deepseek-chat';
+  }
+};
 
 // 题目轮次管理
 const questionRounds = ref([]); // [{id, title, questions, timestamp}]
@@ -464,8 +497,8 @@ const sendMessage = async () => {
     try {
       const sessionResult = await aiQuestionAPI.createSession({
         title: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-        provider: chatStore.currentProvider || 'deepseek',
-        model: chatStore.currentModel || 'deepseek-chat'
+        provider: aiQuestionProvider.value || chatStore.currentProvider || 'deepseek',
+        model: aiQuestionModelName.value || chatStore.currentModel || 'deepseek-chat'
       });
       currentSessionId.value = sessionResult.session?.id || sessionResult.id;
       currentSessionTitle.value = text.substring(0, 50);
@@ -508,8 +541,8 @@ const sendMessage = async () => {
   isGenerating.value = true;
 
   try {
-    const modelName = chatStore.currentModel || 'deepseek-chat';
-    const provider = chatStore.currentProvider || 'deepseek';
+    const modelName = aiQuestionModelName.value || chatStore.currentModel || 'deepseek-chat';
+    const provider = aiQuestionProvider.value || chatStore.currentProvider || 'deepseek';
 
     // 构建历史消息（排除当前正在发送的消息和loading消息）
     const history = messages.value
@@ -719,6 +752,8 @@ watch(messages, () => {
 }, { deep: true });
 
 onMounted(() => {
+  // 加载 admin 配置的 AI 出题模型
+  loadAIQuestionConfig();
   // 监听侧边栏事件
   window.addEventListener('ai-question-load-session', handleLoadSessionEvent);
   window.addEventListener('ai-question-new-session', handleNewSessionEvent);
@@ -804,6 +839,39 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Admin 配置的模型显示 */
+.admin-model-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background-color: var(--secondary-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  user-select: none;
+}
+
+.admin-model-icon {
+  font-size: 16px;
+}
+
+.admin-model-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.admin-model-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-blue, #3b82f6);
+  color: white;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* Chat messages wrapper - contains both messages and questions panel */

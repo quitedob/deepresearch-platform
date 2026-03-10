@@ -85,7 +85,7 @@ func (t *ArxivTool) InvokableRun(ctx context.Context, argumentsInJSON string, op
 
 	papers, err := t.search(ctx, args.Query, maxResults)
 	if err != nil {
-		return fmt.Sprintf("搜索失败: %v", err), nil
+		return "", fmt.Errorf("arxiv搜索失败: %w", err)
 	}
 
 	return t.formatPapers(papers, args.Query), nil

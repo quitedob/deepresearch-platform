@@ -34,7 +34,7 @@ export async function getProviders(forceRefresh = false) {
   const response = await apiClient.get('/llm/providers')
   
   // 更新缓存 - response 已经是解包后的数据
-  // apiClient 的响应拦截器会返回 data.data 或 data
+  // apiClient 的响应拦截器会返回 data.data（后端返回 {success: true, data: {providers, count}}）
   // 所以 response 直接就是 { count, providers } 对象
   if (response) {
     providersCache = response

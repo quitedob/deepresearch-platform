@@ -512,16 +512,37 @@ const handleSendResearch = async (text) => {
             console.log('状态更新:', status);
             
             if (status === 'in_progress') {
-              const progress = data.data?.progress || {};
+              const eventData = data.data || {};
+              const progressValue = eventData.progress || 0;
+              const currentStep = eventData.current_step || '';
+              const message = eventData.message || '';
+              const taskName = eventData.task_name || '';
+              const taskStatus = eventData.task_status || '';
               
               let progressMsg = '🔍 正在进行深度研究...\n\n';
               
-              if (progress.tools_used && progress.tools_used.length > 0) {
-                progressMsg += `**使用的工具**: ${progress.tools_used.join(', ')}\n`;
+              const progressPercent = Math.round(progressValue * 100);
+              if (progressPercent > 0) {
+                progressMsg += `**进度**: ${progressPercent}%\n`;
               }
               
-              if (progress.findings_count > 0) {
-                progressMsg += `**发现数量**: ${progress.findings_count}\n`;
+              if (currentStep) {
+                const stepLabels = {
+                  'planning': '📋 制定研究计划',
+                  'searching': '🔎 搜索资料',
+                  'analyzing': '📊 分析数据',
+                  'synthesizing': '📝 综合整理',
+                  'evaluating': '✅ 评估结果'
+                };
+                progressMsg += `**阶段**: ${stepLabels[currentStep] || currentStep}\n`;
+              }
+              
+              if (taskName) {
+                progressMsg += `**当前任务**: ${taskName}${taskStatus ? ' (' + taskStatus + ')' : ''}\n`;
+              }
+              
+              if (message) {
+                progressMsg += `\n${message}\n`;
               }
               
               progressMsg += '\n*研究进行中，请稍候...*';
@@ -936,7 +957,11 @@ const handleSendMessage = async (text, retryCount = 0) => {
 
     // 网络错误自动重试（最多3次）
     const MAX_RETRIES = 3;
-    if (isNetworkError(error) && retryCount < MAX_RETRIES) {
+    // 检查助手消息是否已有部分内容（流式传输中断）
+    const assistantMsg = chatStore.messages.find(m => m.id === assistantMessageId);
+    const hasPartialContent = assistantMsg && assistantMsg.content && assistantMsg.content.length > 0;
+    
+    if (isNetworkError(error) && retryCount < MAX_RETRIES && !hasPartialContent) {
       console.log(`[Home] 网络错误，${retryCount + 1}/${MAX_RETRIES} 次重试...`);
       chatStore.updateMessageContent({
         messageId: assistantMessageId,
@@ -953,6 +978,20 @@ const handleSendMessage = async (text, retryCount = 0) => {
       
       // 重试
       return handleSendMessage(text, retryCount + 1);
+    }
+
+    // 如果已有部分内容，保留并追加错误提示
+    if (hasPartialContent) {
+      chatStore.appendMessageContent({
+        messageId: assistantMessageId,
+        contentChunk: '\n\n⚠️ 连接中断，以上为已接收的部分回复。'
+      });
+      const endTime = performance.now();
+      const duration = ((endTime - startTime) / 1000).toFixed(1);
+      chatStore.setMessageDuration(assistantMessageId, duration);
+      chatStore.setTypingStatus(false);
+      chatStore.setCurrentRequestController(null);
+      return;
     }
 
     // 保存草稿以防丢失

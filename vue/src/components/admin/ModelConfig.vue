@@ -30,10 +30,9 @@
           <div class="config-row">
             <label>默认提供商</label>
             <select v-model="aiQuestionConfig.default_provider" @change="updateAIQuestionConfig">
-              <option value="deepseek">DeepSeek</option>
-              <option value="zhipu">智谱AI</option>
-              <option value="ollama">Ollama</option>
-              <option value="openrouter">OpenRouter</option>
+              <option v-for="p in providers" :key="p.provider" :value="p.provider">
+                {{ p.display_name }}
+              </option>
             </select>
           </div>
           <div class="config-row">
@@ -123,6 +122,12 @@ import { getProviders, clearProvidersCache } from '@/api/model'
 const providers = ref([])
 const models = ref([])
 const loading = ref(false)
+
+// 通知模型配置变更（同标签页 + 跨标签页）
+const notifyModelConfigUpdated = () => {
+  localStorage.setItem('model_config_updated', Date.now().toString())
+  window.dispatchEvent(new CustomEvent('model-config-updated'))
+}
 const testing = ref({})
 const testResults = ref({})
 
@@ -239,7 +244,7 @@ const toggleProvider = async (provider) => {
     await updateProviderConfig(provider.provider, !provider.is_enabled)
     provider.is_enabled = !provider.is_enabled
     clearProvidersCache()
-    localStorage.setItem('model_config_updated', Date.now().toString())
+    notifyModelConfigUpdated()
   } catch (error) {
     console.error('更新提供商配置失败:', error)
     handleAPIError(error, '更新提供商配置')
@@ -253,7 +258,7 @@ const toggleModel = async (model) => {
     // 清除前端缓存，确保其他页面获取最新配置
     clearProvidersCache()
     // 通知其他标签页模型配置已变更
-    localStorage.setItem('model_config_updated', Date.now().toString())
+    notifyModelConfigUpdated()
   } catch (error) {
     console.error('更新模型配置失败:', error)
     handleAPIError(error, '更新模型配置')
@@ -285,7 +290,7 @@ const enableAllModels = async () => {
     // 更新本地状态
     models.value.forEach(m => m.is_enabled = true)
     clearProvidersCache()
-    localStorage.setItem('model_config_updated', Date.now().toString())
+    notifyModelConfigUpdated()
     alert(`已启用 ${configs.length} 个模型`)
   } catch (error) {
     handleAPIError(error, '批量启用模型')
@@ -318,7 +323,7 @@ const disableAllModels = async () => {
     // 更新本地状态
     models.value.forEach(m => m.is_enabled = false)
     clearProvidersCache()
-    localStorage.setItem('model_config_updated', Date.now().toString())
+    notifyModelConfigUpdated()
     alert(`已禁用 ${configs.length} 个模型`)
   } catch (error) {
     handleAPIError(error, '批量禁用模型')
@@ -344,7 +349,7 @@ const enableProviderModels = async (providerName) => {
       .filter(m => m.provider === providerName)
       .forEach(m => m.is_enabled = true)
     clearProvidersCache()
-    localStorage.setItem('model_config_updated', Date.now().toString())
+    notifyModelConfigUpdated()
   } catch (error) {
     handleAPIError(error, '批量启用模型')
   }
@@ -367,7 +372,7 @@ const disableProviderModels = async (providerName) => {
       .filter(m => m.provider === providerName)
       .forEach(m => m.is_enabled = false)
     clearProvidersCache()
-    localStorage.setItem('model_config_updated', Date.now().toString())
+    notifyModelConfigUpdated()
   } catch (error) {
     handleAPIError(error, '批量禁用模型')
   }

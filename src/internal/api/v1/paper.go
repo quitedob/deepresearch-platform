@@ -16,8 +16,9 @@ import (
 
 // PaperAPI 论文生成API
 type PaperAPI struct {
-	paperDAO     *dao.PaperDAO
-	paperService *service.PaperService
+	paperDAO       *dao.PaperDAO
+	paperService   *service.PaperService
+	modelConfigDAO *dao.ModelConfigDAO
 }
 
 // NewPaperAPI 创建论文API
@@ -25,6 +26,15 @@ func NewPaperAPI(paperDAO *dao.PaperDAO, paperService *service.PaperService) *Pa
 	return &PaperAPI{
 		paperDAO:     paperDAO,
 		paperService: paperService,
+	}
+}
+
+// NewPaperAPIWithDAO 创建带模型配置DAO的论文API
+func NewPaperAPIWithDAO(paperDAO *dao.PaperDAO, paperService *service.PaperService, modelConfigDAO *dao.ModelConfigDAO) *PaperAPI {
+	return &PaperAPI{
+		paperDAO:       paperDAO,
+		paperService:   paperService,
+		modelConfigDAO: modelConfigDAO,
 	}
 }
 
@@ -44,12 +54,22 @@ func (api *PaperAPI) StartPaperGeneration(c *gin.Context) {
 	}
 
 	// Parse options
+	// 从数据库获取默认模型配置，而非硬编码
+	defaultModel := "glm-4.7"
+	if api.modelConfigDAO != nil {
+		enabledModels, err := api.modelConfigDAO.GetEnabledModels(c.Request.Context())
+		if err == nil && len(enabledModels) > 0 {
+			// 优先使用第一个启用的模型作为默认
+			defaultModel = enabledModels[0].ModelName
+		}
+	}
+
 	options := map[string]interface{}{
 		"citation_style":    "chinese-gb",
 		"enable_search":     true,
 		"max_review_rounds": 3,
 		"language":          "zh-CN",
-		"model":             "glm-4.7",
+		"model":             defaultModel,
 	}
 	if req.Options != nil {
 		if req.Options.CitationStyle != "" {

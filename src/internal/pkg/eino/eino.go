@@ -192,29 +192,29 @@ func CreateResearchTools(config ToolsConfig) []InvokableTool {
 }
 
 // CreateWebSearchTool 创建单独的网络搜索工具（供联网搜索功能使用）
-func CreateWebSearchTool() InvokableTool {
-	config := DefaultToolsConfig()
+// apiKey 必须传入，不能为空
+func CreateWebSearchTool(apiKey string) InvokableTool {
 	return einotool.NewWebSearchTool(einotool.WebSearchConfig{
-		APIKey:  config.WebSearchAPIKey,
-		Timeout: config.Timeout,
+		APIKey:  apiKey,
+		Timeout: 30 * time.Second,
 	})
 }
 
 // CreateZReadTool 创建 ZRead MCP 工具（开源仓库读取）
-func CreateZReadTool() InvokableTool {
-	config := DefaultToolsConfig()
+// apiKey 必须传入，不能为空
+func CreateZReadTool(apiKey string) InvokableTool {
 	return einotool.NewZReadTool(einotool.ZReadConfig{
-		APIKey:  config.WebSearchAPIKey,
-		Timeout: config.Timeout,
+		APIKey:  apiKey,
+		Timeout: 30 * time.Second,
 	})
 }
 
 // CreateWebReaderTool 创建 Web Reader MCP 工具（网页读取）
-func CreateWebReaderTool() InvokableTool {
-	config := DefaultToolsConfig()
+// apiKey 必须传入，不能为空
+func CreateWebReaderTool(apiKey string) InvokableTool {
 	return einotool.NewWebReaderTool(einotool.WebReaderConfig{
-		APIKey:  config.WebSearchAPIKey,
-		Timeout: config.Timeout,
+		APIKey:  apiKey,
+		Timeout: 30 * time.Second,
 	})
 }
 
