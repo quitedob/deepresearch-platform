@@ -152,6 +152,7 @@ func (a *ResearchAgent) emitProgress(event *ProgressEvent) {
 // Run 执行研究 - 使用 Agentic RAG + Plan-Execute-Critic-Reflect 模式
 func (a *ResearchAgent) Run(ctx context.Context, query string) (*Result, error) {
 	startTime := time.Now()
+	fmt.Printf("[DEBUG] ResearchAgent.Run 开始: query=%s\n", query)
 
 	if a.config.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -175,7 +176,10 @@ func (a *ResearchAgent) Run(ctx context.Context, query string) (*Result, error) 
 
 	enhancedPlan, err := a.planner.CreatePlan(ctx, query)
 	if err != nil {
+		fmt.Printf("[DEBUG] CreatePlan 失败: %v，使用默认计划\n", err)
 		enhancedPlan = a.planner.defaultPlan(query)
+	} else {
+		fmt.Printf("[DEBUG] CreatePlan 成功: sub_questions=%d\n", len(enhancedPlan.SubQuestions))
 	}
 
 	// 转换为兼容格式
@@ -205,6 +209,8 @@ func (a *ResearchAgent) Run(ctx context.Context, query string) (*Result, error) 
 	stepNumber := 2
 
 	for searchDepth < a.config.MaxSearchDepth {
+		fmt.Printf("[DEBUG] 进入搜索循环: depth=%d, max_depth=%d\n", searchDepth, a.config.MaxSearchDepth)
+
 		select {
 		case <-ctx.Done():
 			result.Error = "执行超时"
@@ -215,6 +221,7 @@ func (a *ResearchAgent) Run(ctx context.Context, query string) (*Result, error) 
 
 		// ---- Execute: 执行搜索 ----
 		progress := 0.1 + float32(searchDepth)*0.2
+		fmt.Printf("[DEBUG] 发送进度: stage=executing, progress=%.2f\n", progress)
 		a.emitProgress(&ProgressEvent{
 			Stage: "executing", Progress: progress,
 			Message: fmt.Sprintf("第%d轮信息收集中...", searchDepth+1),
@@ -753,13 +760,17 @@ func (a *ResearchAgent) executeSearch(ctx context.Context, question string, dept
 	if err != nil {
 		// P1 修复：不再将错误字符串作为搜索结果返回
 		// 之前错误信息会被当作"有效证据"入池，污染结论
+		// 添加日志记录工具调用错误
+		fmt.Printf("[DEBUG] 工具调用失败: tool=%s, args=%s, error=%v\n", toolName, args, err)
 		return "", toolName
 	}
-	
+
 	if result == "" {
+		fmt.Printf("[DEBUG] 工具返回空结果: tool=%s, args=%s\n", toolName, args)
 		return "", toolName
 	}
-	
+
+	fmt.Printf("[DEBUG] 工具调用成功: tool=%s, result_len=%d\n", toolName, len(result))
 	return result, toolName
 }
 

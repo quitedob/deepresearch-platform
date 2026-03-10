@@ -120,8 +120,11 @@ func (s *ResearchService) ExecuteResearchWithConfig(sessionID, query, researchTy
 
 // executeResearch 执行研究
 func (s *ResearchService) executeResearch(ctx context.Context, session *models.ResearchSession) {
+	fmt.Printf("[DEBUG] executeResearch 开始: session_id=%s, query=%s, type=%s\n", session.ID, session.Query, session.ResearchType)
+
 	// 优先使用并行编排器（deep/comprehensive类型）
 	useParallel := s.orchestrator != nil && (session.ResearchType == "deep" || session.ResearchType == "comprehensive")
+	fmt.Printf("[DEBUG] useParallel=%v, orchestrator=%v\n", useParallel, s.orchestrator != nil)
 
 	if !useParallel && s.agent == nil {
 		if s.eventStream != nil {
@@ -136,6 +139,8 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 
 	// 创建进度回调
 	progressCallback := func(event *agent.ProgressEvent) {
+		fmt.Printf("[DEBUG] 进度回调: stage=%s, progress=%.2f, message=%s\n", event.Stage, event.Progress, event.Message)
+
 		if s.repo != nil {
 			_ = s.repo.UpdateSessionStatus(ctx, session.ID, event.Stage, event.Progress)
 		}

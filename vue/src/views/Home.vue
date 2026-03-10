@@ -400,6 +400,8 @@ const handleSendWebSearch = async (text) => {
     }
 
     // 使用联网搜索API（后台执行所有步骤）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120秒超时
     const response = await fetch(`${API_BASE_URL}/chat/chat/web-search`, {
       method: 'POST',
       headers: {
@@ -410,8 +412,10 @@ const handleSendWebSearch = async (text) => {
         session_id: sessionId,
         message: text,
         stream: false
-      })
+      }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -431,7 +435,9 @@ const handleSendWebSearch = async (text) => {
       chatStore.fetchHistoryList();
     }
   } catch (error) {
-    const msg = handleAPIError(error);
+    const msg = error.name === 'AbortError'
+      ? '请求超时，联网搜索耗时较长，请稍后重试'
+      : handleAPIError(error);
     chatStore.updateMessageContent({ 
       messageId: assistantMessageId, 
       contentChunk: `联网搜索失败: ${msg}` 

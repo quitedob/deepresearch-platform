@@ -190,9 +190,26 @@ const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
-const copyCode = (code) => {
-  navigator.clipboard.writeText(code)
-  alert('已复制到剪贴板')
+const copyCode = async (code) => {
+  try {
+    await navigator.clipboard.writeText(code);
+    alert('已复制到剪贴板');
+  } catch (err) {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      alert('已复制到剪贴板');
+    } catch (fallbackErr) {
+      console.error('Failed to copy:', fallbackErr);
+      alert('复制失败，请手动复制');
+    }
+  }
 }
 
 const prevPage = () => {

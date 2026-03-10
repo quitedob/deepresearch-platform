@@ -453,10 +453,10 @@ const md = markdownit({
     if (lang && hljs.getLanguage(lang)) {
       try {
         const highlighted = hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
-        return `<pre class="hljs" data-lang="${lang}"><code>${highlighted}</code><button class="copy-code-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent)">复制</button></pre>`;
+        return `<pre class="hljs" data-lang="${lang}"><code>${highlighted}</code><button class="copy-code-btn" onclick="(function(btn){var t=btn.parentElement.querySelector('code').textContent;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(function(){});}else{var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);}})(this)">复制</button></pre>`;
       } catch (__) {}
     }
-    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code><button class="copy-code-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent)">复制</button></pre>`;
+    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code><button class="copy-code-btn" onclick="(function(btn){var t=btn.parentElement.querySelector('code').textContent;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(function(){});}else{var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);}})(this)">复制</button></pre>`;
   }
 });
 
@@ -497,10 +497,23 @@ const formattedContent = computed(() => {
 });
 
 const copyContent = async () => {
+  const text = props.message.content;
   try {
-    await navigator.clipboard.writeText(props.message.content);
+    await navigator.clipboard.writeText(text);
   } catch (err) {
-    console.error('Failed to copy: ', err);
+    // Clipboard API 不可用时使用 execCommand fallback
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    } catch (fallbackErr) {
+      console.error('Failed to copy: ', fallbackErr);
+    }
   }
 };
 
@@ -758,7 +771,19 @@ const hideShareSuccess = () => {
 
 const copyShareLink = async () => {
   try {
-    await navigator.clipboard.writeText(shareLink.value);
+    const text = shareLink.value;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (clipErr) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
 
     // 可以添加一个简单的提示消息
     const originalText = shareLinkRef.value?.parentElement?.querySelector('.copy-btn')?.innerHTML;

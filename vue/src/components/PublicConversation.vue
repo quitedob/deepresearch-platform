@@ -223,7 +223,19 @@ const loadPublicConversation = async () => {
 const shareAgain = async () => {
   try {
     const shareUrl = window.location.href;
-    await navigator.clipboard.writeText(shareUrl);
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch (clipErr) {
+      // Clipboard API 不可用时使用 execCommand fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = shareUrl;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
 
     // 显示成功提示
     showShareToast.value = true;

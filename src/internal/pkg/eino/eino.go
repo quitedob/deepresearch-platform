@@ -81,7 +81,7 @@ func DefaultToolsConfig() ToolsConfig {
 		WebSearchAPIKey:    "", // 需要从外部传入
 		ArxivMaxResults:    10,
 		WikipediaLanguage:  "zh",
-		Timeout:            30 * time.Second,
+		Timeout:            90 * time.Second, // 从30秒提升到90秒，避免联网搜索+LLM生成链路超时
 		EnableReliability:  true,  // 默认启用可靠性
 		EnableZRead:        true,  // 默认启用 ZRead MCP
 		EnableWebReader:    true,  // 默认启用 Web Reader MCP
@@ -196,7 +196,7 @@ func CreateResearchTools(config ToolsConfig) []InvokableTool {
 func CreateWebSearchTool(apiKey string) InvokableTool {
 	return einotool.NewWebSearchTool(einotool.WebSearchConfig{
 		APIKey:  apiKey,
-		Timeout: 30 * time.Second,
+		Timeout: 90 * time.Second,
 	})
 }
 

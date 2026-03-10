@@ -283,8 +283,12 @@ func main() {
 	var toolsAPIKey string
 	if zhipuOk && zhipuCfg.APIKey != "" {
 		toolsAPIKey = zhipuCfg.APIKey
+		log.Info("使用智谱API Key作为工具API Key", zap.String("api_key_masked", maskAPIKey(toolsAPIKey)))
 	} else if openaiOk && openaiCfg.APIKey != "" {
 		toolsAPIKey = openaiCfg.APIKey
+		log.Info("使用OpenAI API Key作为工具API Key", zap.String("api_key_masked", maskAPIKey(toolsAPIKey)))
+	} else {
+		log.Warn("没有可用的工具API Key，MCP工具将无法初始化")
 	}
 
 	if researchAPIKey != "" {
@@ -309,8 +313,23 @@ func main() {
 				EnableWebReader:    true,
 				EnableSearchPrime:  true, // 启用 Web Search Prime MCP（增强搜索）
 			}
+			log.Info("准备创建研究工具",
+				zap.Bool("tools_api_key_set", toolsAPIKey != ""),
+				zap.Bool("enable_zread", toolsConfig.EnableZRead),
+				zap.Bool("enable_web_reader", toolsConfig.EnableWebReader),
+				zap.Bool("enable_search_prime", toolsConfig.EnableSearchPrime))
 			researchTools = eino.CreateResearchTools(toolsConfig)
-			log.Info("研究工具创建成功", zap.Int("tools_count", len(researchTools)))
+
+			// 打印所有工具名称
+			toolNames := make([]string, 0, len(researchTools))
+			for _, tool := range researchTools {
+				if info, err := tool.Info(context.Background()); err == nil {
+					toolNames = append(toolNames, info.Name)
+				}
+			}
+			log.Info("研究工具创建成功",
+				zap.Int("tools_count", len(researchTools)),
+				zap.Strings("tool_names", toolNames))
 
 			// 创建研究Agent配置
 			agentConfig := eino.AgentConfig{

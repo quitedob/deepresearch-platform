@@ -1,8 +1,8 @@
 server:
   port: 8080
   env: development
-  read_timeout: 30
-  write_timeout: 0
+  read_timeout: 120
+  write_timeout: 120
 
 database:
   host: localhost

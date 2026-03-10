@@ -424,7 +424,19 @@ const copyContent = async (content) => {
   try {
     await navigator.clipboard.writeText(content);
   } catch (err) {
-    console.error('Failed to copy:', err);
+    // Clipboard API 不可用时使用 execCommand fallback
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = content;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    } catch (fallbackErr) {
+      console.error('Failed to copy:', fallbackErr);
+    }
   }
 };
 

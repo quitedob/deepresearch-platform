@@ -3,6 +3,7 @@
 import (
     "fmt"
     "os"
+    "path/filepath"
     "regexp"
     "strings"
     "time"
@@ -114,8 +115,33 @@ type LoggingConfig struct {
 
 // Load 加载配置
 func Load(configPath string) (*Config, error) {
-    // 加载 .env 文件（如果存在）
-    godotenv.Load() // 忽略错误
+    // 加载 .env 文件（尝试多个路径）
+    // godotenv.Load() 默认只从当前工作目录加载，如果工作目录不是项目根目录会找不到
+    // 策略：1) 当前目录 2) 基于 configPath 推导项目根目录 3) 向上遍历
+    envPaths := []string{".env"}
+    // 从 configPath 推导项目根目录（configPath 通常是 src/configs/config.yaml）
+    if absConfigPath, err := filepath.Abs(configPath); err == nil {
+        projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(absConfigPath))) // 上溯3级: configs -> src -> root
+        envFromConfig := filepath.Join(projectRoot, ".env")
+        envPaths = append(envPaths, envFromConfig)
+    }
+    envPaths = append(envPaths, "../.env", "../../.env")
+
+    envLoaded := false
+    for _, p := range envPaths {
+        if err := godotenv.Load(p); err == nil {
+            envLoaded = true
+            if absPath, err := filepath.Abs(p); err == nil {
+                fmt.Fprintf(os.Stderr, "[INFO] 已加载环境变量文件: %s\n", absPath)
+            } else {
+                fmt.Fprintf(os.Stderr, "[INFO] 已加载环境变量文件: %s\n", p)
+            }
+            break
+        }
+    }
+    if !envLoaded {
+        fmt.Fprintln(os.Stderr, "[WARN] 未找到 .env 文件，将仅使用系统环境变量和配置文件")
+    }
 
     // 读取 YAML 配置文件
     viper.SetConfigFile(configPath)
