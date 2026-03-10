@@ -3,12 +3,14 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go" alt="Go Version">
   <img src="https://img.shields.io/badge/Vue-3.x-4FC08D?style=flat&logo=vue.js" alt="Vue Version">
-  <img src="https://img.shields.io/badge/CloudWeGo-Eino-orange" alt="Eino Framework">
+  <img src="https://img.shields.io/badge/Gin-Web-green" alt="Gin">
+  <img src="https://img.shields.io/badge/Eino-AI-orange" alt="CloudWeGo Eino">
+  <img src="https://img.shields.io/badge/GORM-PostgreSQL-blue" alt="GORM PostgreSQL">
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
 </p>
 
-基于 [CloudWeGo Eino](https://github.com/cloudwego/eino) 框架构建的新一代 AI 研究平台，集成多智能体协作、自主研究工作流、智能题目生成和完整的会员管理体系。
+基于 **Gin + CloudWeGo Eino** 混合架构的新一代 AI 研究平台，集成多智能体协作、自主研究工作流、智能题目生成和完整的会员管理体系。
 
 ## ✨ 核心功能
 
@@ -51,90 +53,43 @@
 - 证据链追踪和可靠性分析
 - 支持Markdown/JSON导出
 
-### 📄 AI论文生成系统
-- **多模板支持**: APA、MLA、Chicago、IEEE等学术格式
-- **章节生成**: 摘要、引言、文献综述、方法论、结果、讨论、结论
-- **智能引用**: 自动生成符合规范的引用格式
-- **字数统计**: 实时统计各章节字数
-- **章节重生成**: 支持单独重新生成某个章节
-- **导出功能**: 支持Markdown和PDF格式导出
+### 📄 扩展功能（数据模型支持）
+- **AI论文生成**: 数据模型已就绪，支持多种学术格式
+- **AI题目生成**: 数据模型已就绪，支持多种题型
+- **会员与配额系统**: 完整的数据库模型支持
+- **通知系统**: 数据库模型已实现
 
-### 📝 AI题目生成系统
-- **支持题型**: 单选题、多选题、判断题、简答题
-- **智能生成**: 自动生成题目ID、分值、解析
-- **难度分级**: 简单/中等/困难
-- **知识点标注**: 自动标签和分类
-- **会话管理**: 独立的出题会话系统
-- **防重复**: 智能避免重复题目
-
-### 👥 会员与配额系统
-| 用户类型 | 聊天配额 | 研究配额 | 重置周期 |
-|----------|----------|----------|----------|
-| 普通用户 | 10次/天 | 1次/天 | 每天 |
-| 高级会员 | 50次 | 10次 | 5小时 |
-
-**激活码系统**:
-- 批量生成和管理激活码
-- 使用记录追踪
-- 自定义配额配置
-
-### 🔔 通知系统
-- 配额不足提醒
-- 系统更新通知
-- 激活成功通知
-- 研究完成通知
-- 实时未读统计
-
-### 🔌 MCP工具集成
-- **WebSearchTool** - 智谱AI网络搜索
-- **WebSearchPrime** - 增强网络搜索
-- **ArxivTool** - 学术论文搜索
-- **WikipediaTool** - 维基百科查询
-- **ZReadTool** - GitHub代码阅读
-- **WebReaderTool** - 网页内容提取
-- **ReliabilityTool** - 可靠性评估
-
-### 🛠️ 管理后台
-- **用户管理**: 状态管理、会员设置、配额分配
-- **模型配置**: 动态配置模型参数
-- **激活码管理**: 生成、查询、批量操作
-- **通知管理**: 系统通知发布
-- **聊天记录**: 查询和导出用户对话
-- **统计面板**: 实时数据和可视化
+> 注：部分功能的数据模型已创建，API 端点开发中
 
 ## 🏗️ 技术架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        Vue 3 Frontend                               │
-│         (Vite + Pinia + Vue Router + Element Plus)                  │
+│              (Vite + Pinia + Vue Router + Element Plus)             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │ ChatContainer│  │ResearchSpace │  │  AISpace     │             │
-│  │ PaperGen     │  │MembershipMgr │  │  Notification │             │
-│  │ AdminPanel   │  │ModelConfig   │  │  Monitoring  │             │
+│  │ AdminPanel   │  │Settings      │  │  Components  │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
-                              ↕ HTTP/SSE/WebSocket
+                              ↕ HTTP/SSE
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      Go Backend (Gin)                               │
+│                      Go Backend (Gin Web API)                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
-│  │ Auth API     │  │ Chat API     │  │ Research API │             │
-│  │ Membership   │  │ AIQuestion   │  │ Paper API    │             │
-│  │ Notification │  │ MCP API      │  │ LLM API      │             │
-│  │ Admin API    │  │ MCP API      │  │ LLM API      │             │
+│  │ Auth Handler │  │ Chat Handler │  │ Research     │             │
+│  │ LLM Handler  │  │ Middleware   │  │   Handler    │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
                               ↕
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Eino Component Layer                             │
+│                 AI Agent Layer (CloudWeGo Eino)                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
 │  │              Multi-Agent Orchestration                       │   │
 │  │  Planner → Research → Evaluator → Critic → Report           │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │ LLMScheduler │  │ ChatModel    │  │ Tool Registry│             │
-│  │ StreamManager│  │ ConfigMgr    │  │ QuotaManager │             │
-│  │ PaperGen     │  │ CitationMgr  │  │ TemplateMgr  │             │
+│  │ StreamMgr    │  │ ConfigMgr    │  │ Reliability  │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
                               ↕
@@ -142,10 +97,9 @@
 │                   Infrastructure Layer                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │
 │  │ PostgreSQL   │  │ Redis        │  │ LLM APIs     │             │
-│  │ (Users/Chat  │  │ (Cache/      │  │ DeepSeek     │             │
-│  │  Research/   │  │  Session)    │  │ Zhipu/GLM    │             │
-│  │  Papers/...) │  │              │  │ OpenAI/...)  │             │
-│  │  Quota/...)  │  │              │  │ OpenAI/...)  │             │
+│  │ (GORM)       │  │ (Cache)      │  │ DeepSeek     │             │
+│  │              │  │              │  │ Zhipu/GLM    │             │
+│  │              │  │              │  │ Ollama       │             │
 │  └──────────────┘  └──────────────┘  └──────────────┘             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -166,7 +120,7 @@ cd deepresearch-platform
 
 ### 2. 配置环境变量
 ```bash
-cp .env .env
+cp .env.example .env
 # 编辑 .env 文件，填入你的 API Keys
 ```
 
@@ -175,17 +129,18 @@ cp .env .env
 # LLM API Keys
 DEEPSEEK_API_KEY=your_deepseek_api_key
 ZHIPU_API_KEY=your_zhipu_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key  # 可选
 
 # Database
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_password
-POSTGRES_DB=go_deep_research
+DB_PASSWORD=your_db_password
 
 # JWT Secret
 JWT_SECRET=your_jwt_secret
 
-# System Prompt (可选)
-SYSTEM_SAFETY_PROMPT=你是一个有帮助的AI助手...
+# Admin User (可选)
+ADMIN_EMAIL=admin@example.com
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
 ```
 
 ### 3. 启动后端
@@ -231,31 +186,40 @@ ADMIN_PASSWORD=your_secure_password
 ## 📁 项目结构
 
 ```
-deepresearch-platform/
+go-deep-research/
 ├── src/
 │   ├── cmd/server/          # 应用入口
-│   ├── configs/             # 配置文件
-│   ├── docs/                # 详细文档
-│   └── internal/
-│       ├── api/             # HTTP API 层
-│       │   └── v1/          # API v1 版本
-│       ├── eino/            # Eino 组件
-│       │   ├── agent/       # 研究 Agent
-│       │   ├── model/       # 模型封装
-│       │   └── tool/        # 工具实现
-│       ├── middleware/      # 中间件
-│       ├── repository/      # 数据访问层
-│       ├── service/         # 业务逻辑层
-│       └── types/           # 类型定义
+│   ├── configs/             # 配置文件 (config.yaml, models.yaml)
+│   ├── internal/
+│   │   ├── handler/         # HTTP 处理器
+│   │   ├── middleware/      # Gin 中间件
+│   │   ├── repository/      # 数据访问层 (DAO + Model)
+│   │   │   ├── dao/         # 数据访问对象
+│   │   │   └── model/       # GORM 数据模型
+│   │   ├── service/         # 业务逻辑层
+│   │   ├── pkg/             # 工具包
+│   │   │   ├── auth/        # JWT + 密码加密
+│   │   │   ├── llm/         # LLM 提供商实现
+│   │   │   ├── eino/        # CloudWeGo Eino 封装
+│   │   │   │   ├── agent/   # AI Agents (Planner, Research, Evaluator, Critic)
+│   │   │   │   ├── model/   # Eino 模型适配器
+│   │   │   │   └── tool/    # MCP 工具实现 (WebSearch, Arxiv, Wikipedia, ZRead)
+│   │   │   ├── paper/       # 论文生成工具
+│   │   │   └── tools/       # 工具接口
+│   │   ├── cache/           # Redis 缓存
+│   │   ├── database/        # 数据库初始化和迁移
+│   │   ├── monitoring/      # Prometheus 监控
+│   │   └── types/           # 请求/响应类型
+│   └── infrastructure/      # 基础设施层
 ├── vue/                     # Vue 3 前端
 │   ├── src/
 │   │   ├── api/             # API 调用
-│   │   ├── components/      # 组件
-│   │   ├── store/           # Pinia 状态
-│   │   └── views/           # 页面
+│   │   ├── components/      # Vue 组件
+│   │   ├── views/           # 页面视图
+│   │   ├── stores/          # Pinia 状态管理
+│   │   └── router/          # Vue Router 配置
 │   └── ...
-├── test/                    # 测试脚本
-└── ...
+└── docs/                    # 文档
 ```
 
 ## 📡 API 端点
@@ -266,148 +230,45 @@ deepresearch-platform/
 | POST | `/register` | 用户注册 |
 | POST | `/login` | 用户登录 |
 | POST | `/refresh` | 刷新Token |
-| POST | `/logout` | 用户登出 |
-
-### 👤 用户管理 (`/api/v1/user`)
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| GET | `/profile` | 获取用户信息 |
-| PUT | `/profile` | 更新用户信息 |
-| GET | `/preferences` | 获取用户偏好 |
-| PUT | `/preferences` | 更新用户偏好 |
-| POST | `/change-password` | 修改密码 |
-| GET | `/stats` | 获取用户统计 |
-| DELETE | `/delete-account` | 删除账户 |
-| GET | `/memory-settings` | 获取记忆设置 |
-| PUT | `/memory-settings` | 更新记忆设置 |
 
 ### 💬 聊天功能 (`/api/v1/chat`)
 | 方法 | 端点 | 描述 |
 |------|------|------|
-| GET | `/models` | 获取可用模型列表 |
 | POST | `/sessions` | 创建聊天会话 |
 | GET | `/sessions` | 获取会话列表 |
-| GET | `/sessions/:id` | 获取会话详情 |
-| PUT | `/sessions/:id` | 更新会话 |
-| DELETE | `/sessions/:id` | 删除会话 |
-| GET | `/sessions/:id/messages` | 获取消息列表 |
-| DELETE | `/sessions/:id/messages` | 清空消息 |
-| POST | `/chat` | 发送消息（非流式） |
-| POST | `/chat/stream` | 流式聊天 |
-| POST | `/chat/web-search` | 联网搜索聊天 |
-| GET | `/sessions/:id/context-status` | 获取上下文状态 |
-| POST | `/sessions/:id/summarize-and-new` | 总结并新建会话 |
+| GET | `/sessions/:session_id` | 获取会话详情 |
+| DELETE | `/sessions/:session_id` | 删除会话 |
+| POST | `/sessions/:session_id/messages` | 发送消息 |
+| GET | `/sessions/:session_id/messages` | 获取消息列表 |
+| GET | `/sessions/:session_id/stream` | 流式消息 |
+| PUT | `/sessions/:session_id/provider` | 更新提供商 |
 
 ### 🔬 深度研究 (`/api/v1/research`)
 | 方法 | 端点 | 描述 |
 |------|------|------|
-| POST | `/start` | 启动研究 |
-| GET | `/stream/:session_id` | 流式获取研究进度（SSE） |
-| GET | `/status/:session_id` | 获取研究状态 |
+| POST | `/sessions` | 启动研究会话 |
 | GET | `/sessions` | 获取研究会话列表 |
-| GET | `/export/:session_id` | 导出研究结果 |
-| GET | `/search` | 搜索研究记录 |
-| GET | `/statistics` | 获取研究统计 |
-
-### 📄 论文生成 (`/api/v1/paper`)
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| GET | `/templates` | 获取论文模板列表 |
-| GET | `/citation-styles` | 获取引用样式列表 |
-| POST | `/start` | 开始生成论文 |
-| GET | `/status/:id` | 获取论文生成状态 |
-| GET | `/result/:id` | 获取论文内容 |
-| GET | `/export/:id` | 导出论文 |
-| GET | `/list` | 获取论文列表 |
-| DELETE | `/:id` | 删除论文 |
-| POST | `/regenerate` | 重新生成章节 |
-| GET | `/stream/:id` | 流式获取生成进度 |
-
-### 📝 AI题目生成 (`/api/v1/ai`)
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| POST | `/generate-questions` | 生成题目 |
-| POST | `/question-sessions` | 创建出题会话 |
-| GET | `/question-sessions` | 获取出题会话列表 |
-| GET | `/question-sessions/:id` | 获取出题会话详情 |
-| PUT | `/question-sessions/:id` | 更新出题会话标题 |
-| DELETE | `/question-sessions/:id` | 删除出题会话 |
-| POST | `/question-sessions/:id/questions` | 保存题目到会话 |
-| GET | `/question-config` | 获取出题配置 |
-
-### 👥 会员系统 (`/api/v1/membership`)
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| GET | `/` | 获取会员信息 |
-| GET | `/quota` | 获取配额信息 |
-| POST | `/activate` | 激活码激活 |
-| GET | `/check-chat-quota` | 检查聊天配额 |
-| GET | `/check-research-quota` | 检查研究配额 |
-
-### 🔔 通知系统 (`/api/v1/notifications`)
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| GET | `/` | 获取用户通知 |
-| GET | `/unread-count` | 获取未读数量 |
-| POST | `/:id/read` | 标记为已读 |
-| POST | `/read-all` | 全部标记已读 |
-
-### 🔌 MCP工具 (`/api/v1/mcp`)
-| 方法 | 端点 | 描述 |
-|------|------|------|
-| GET | `/tools` | 获取可用工具列表 |
-| GET | `/tools/:tool_name` | 获取工具详情 |
-| POST | `/tools/call` | 调用工具 |
+| GET | `/sessions/:session_id` | 获取研究会话详情 |
+| GET | `/sessions/:session_id/results` | 获取研究结果 |
+| GET | `/sessions/:session_id/tasks` | 获取研究任务 |
+| GET | `/sessions/:session_id/stream` | 流式获取研究进度(SSE) |
+| POST | `/sessions/:session_id/cancel` | 取消研究 |
 
 ### 🤖 LLM管理 (`/api/v1/llm`)
 | 方法 | 端点 | 描述 |
 |------|------|------|
 | GET | `/providers` | 获取LLM提供商列表 |
+| GET | `/providers/:provider/metrics` | 获取提供商指标 |
 | GET | `/models` | 获取所有可用模型 |
-| GET | `/metrics` | 获取LLM指标 |
-| POST | `/test` | 测试LLM提供商 |
-
-### 🛠️ 管理员功能 (`/api/v1/admin`)
-| 分类 | 方法 | 端点 | 描述 |
-|------|------|------|------|
-| 统计 | GET | `/stats` | 获取管理员统计 |
-| 用户 | GET | `/users` | 列出用户 |
-| | PUT | `/users/:id/status` | 更新用户状态 |
-| | PUT | `/users/:id/membership` | 更新用户会员 |
-| | PUT | `/users/:id/quota` | 设置用户配额 |
-| | POST | `/users/:id/reset-quota` | 重置用户配额 |
-| | PUT | `/users/batch-status` | 批量更新状态 |
-| 聊天记录 | GET | `/users/:id/chat-history` | 获取聊天历史 |
-| | GET | `/users/:id/chat-history/export` | 导出聊天历史 |
-| 激活码 | GET | `/activation-codes` | 列出激活码 |
-| | POST | `/activation-codes` | 创建激活码 |
-| | GET | `/activation-codes/:id` | 获取激活码详情 |
-| | PUT | `/activation-codes/:id` | 更新激活码 |
-| | DELETE | `/activation-codes/:id` | 删除激活码 |
-| 通知 | GET | `/notifications` | 列出通知 |
-| | POST | `/notifications` | 创建通知 |
-| | DELETE | `/notifications/:id` | 删除通知 |
-| 模型配置 | GET | `/providers` | 获取提供商配置 |
-| | PUT | `/providers` | 更新提供商配置 |
-| | GET | `/models` | 获取模型配置 |
-| | PUT | `/models` | 更新模型配置 |
-| | PUT | `/models/batch` | 批量更新模型 |
-| | POST | `/models/test` | 测试模型 |
-| | GET | `/models/registered` | 获取已注册模型 |
-| | POST | `/models/sync` | 同步模型到数据库 |
-| 配额配置 | GET | `/quota-configs` | 获取配额配置 |
-| | PUT | `/quota-configs` | 更新配额配置 |
-| | PUT | `/users/:id/custom-quota` | 设置用户自定义配额 |
-| | PUT | `/users/batch-quota` | 批量设置配额 |
+| POST | `/test` | 测试提供商连接 |
 
 ## 🎯 核心交互功能
 
-| 功能 | 按钮标识 | 后端实现 | 说明 |
-|------|----------|----------|------|
-| **深度思考** | 🧠 Deep Think | `getDeepThinkingModel()` | 自动切换到推理模型（deepseek-reasoner/glm-4.7） |
-| **联网搜索** | 🌐 Web Search | `ChatWebSearch()` + `WebSearchTool` | 调用智谱AI web_search 获取实时信息 |
-| **深度研究** | 🔬 Deep Research | `ResearchAgent` 多智能体系统 | 规划→执行→评估→报告全流程 |
-| **论文生成** | 📄 Generate Paper | `PaperAPI` + 模板系统 | 支持多种学术格式，智能引用生成 |
+| 功能 | 后端实现 | 说明 |
+|------|----------|------|
+| **聊天对话** | `ChatService` + `LLMScheduler` | 支持多模型、流式/非流式输出 |
+| **深度研究** | `ResearchService` + 多 Agent 系统 | 规划→执行→评估→报告全流程 |
+| **模型切换** | `LLMScheduler` | 动态切换 LLM 提供商和模型 |
 
 ### 研究流程详解
 ```
@@ -416,40 +277,21 @@ deepresearch-platform/
 │  2. Research Agent   - 使用工具收集信息                     │
 │  3. Evaluator Agent  - 评估信息质量和相关性                 │
 │  4. Critic Agent     - 批评分析，找出遗漏                  │
-│  5. Report Agent     - 生成结构化报告                       │
+│  5. Structured Report Agent - 生成结构化报告                │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-### 论文生成流程
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. 选择模板        - APA/MLA/Chicago/IEEE                 │
-│  2. 输入主题        - 论文题目和研究方向                    │
-│  3. 生成大纲        - 自动生成章节结构                      │
-│  4. 逐章生成        - 使用 LLM 生成各章节内容              │
-│  5. 智能引用        - 自动生成符合规范的引用               │
-│  6. 导出论文        - Markdown/PDF 格式                    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## 📚 详细文档
-
-- [API 文档](src/docs/API_DOCUMENTATION.md) - 完整的API参考
-- [架构设计](src/docs/ARCHITECTURE.md) - 系统架构和设计模式
-- [开发指南](src/docs/DEVELOPER_SETUP.md) - 开发环境搭建
-- [配置参考](src/docs/CONFIGURATION_REFERENCE.md) - 配置文件详解
-- [部署指南](src/docs/DEPLOYMENT_SETUP.md) - 生产部署说明
 
 ## 🌟 项目亮点
 
-1. **多智能体协作** - 基于 Eino 框架的 ReAct Agent 系统
-2. **实时流式输出** - SSE 推送，支持长文本流式展示
-3. **智能上下文管理** - 自动监控 token 使用，智能总结
-4. **完整的会员体系** - 配额管理、激活码、自动重置
-5. **AI 题目生成** - 支持多种题型，智能防重复
-6. **AI 论文生成** - 多种学术格式，智能引用系统
-7. **MCP 工具集成** - 可扩展的工具系统
-8. **GLM Coding Plan 支持** - 专为编程优化的 API 端点
+1. **混合架构** - Gin 处理 Web API + CloudWeGo Eino 处理 AI Agent 编排
+2. **多 LLM 提供商** - DeepSeek、智谱AI、Ollama、OpenRouter、GLM Coding Plan
+3. **多智能体协作** - 基于 Eino 框架的 ReAct Agent 系统（Planner、Research、Evaluator、Critic、Report）
+4. **MCP 工具集成** - WebSearch、Arxiv、Wikipedia、ZRead、WebReader、WebSearchPrime
+5. **实时流式输出** - SSE 推送，支持长文本流式展示
+6. **完整的数据库迁移** - 自动检查表结构、创建索引、初始化默认数据
+7. **Prometheus 监控** - 内置指标收集和监控端点
+8. **Redis 缓存支持** - 会话管理和性能优化
+9. **灵活的配置系统** - 支持环境变量覆盖和 YAML 配置
 
 ## 🚀 快速测试
 
@@ -465,25 +307,23 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 curl -X POST http://localhost:8080/api/v1/chat/sessions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <TOKEN>" \
-  -d '{"title":"测试","llm_provider":"zhipu","model_name":"glm-4.7"}'
+  -d '{"title":"测试","provider":"zhipu","model":"glm-4.7"}'
 
 # 3. 发送消息
-curl -X POST http://localhost:8080/api/v1/chat/chat \
+curl -X POST http://localhost:8080/api/v1/chat/sessions/<SESSION_ID>/messages \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <TOKEN>" \
-  -d '{"session_id":"<SESSION_ID>","message":"你好","stream":false}'
+  -d '{"message":"你好"}'
 
 # 4. 启动深度研究
-curl -X POST http://localhost:8080/api/v1/research/start \
+curl -X POST http://localhost:8080/api/v1/research/sessions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <TOKEN>" \
   -d '{"query":"Go语言的最新发展","mode":"deep"}'
 
-# 5. 生成论文
-curl -X POST http://localhost:8080/api/v1/paper/start \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <TOKEN>" \
-  -d '{"title":"人工智能的发展","template":"apa","citation_style":"apa"}'
+# 5. 获取 LLM 提供商列表
+curl -X GET http://localhost:8080/api/v1/llm/providers \
+  -H "Authorization: Bearer <TOKEN>"
 ```
 
 ## 🔧 GLM Coding Plan 配置
@@ -504,8 +344,9 @@ llm:
       api_key: "your_api_key"
       base_url: https://api.z.ai/api/coding/paas/v4  # Coding专用端点
       models:
-        - glm-4.7
-        - glm-4.5-air
+        - GLM-5
+        - GLM-4.7
+        - GLM-4.5-air
 ```
 
 ### Cursor 集成 GLM Coding Plan
@@ -514,8 +355,16 @@ llm:
 Provider: OpenAI Compatible
 API Key: [你的 GLM API Key]
 Base URL: https://api.z.ai/api/coding/paas/v4
-Model: GLM-4.7 (大写)
+Model: GLM-5 (大写)
 ```
+
+### 模型配置文件 (models.yaml)
+
+项目使用独立的 `models.yaml` 文件管理模型元数据：
+
+- **providers**: 提供商配置（显示名称、启用状态、排序）
+- **models**: 模型详细信息（显示名称、描述、上下文长度、能力标签）
+- **deep_thinking_models**: 深度思考模型映射关系
 
 ## 🤝 贡献指南
 
@@ -545,17 +394,20 @@ Model: GLM-4.7 (大写)
 
 ## 🙏 致谢
 
-- [CloudWeGo Eino](https://github.com/cloudwego/eino) - 优秀的 Go 语言 AI 应用框架
+- [CloudWeGo Eino](https://github.com/cloudwego/eino) - 优秀的 Go 语言 AI Agent 应用框架
 - [DeepSeek](https://www.deepseek.com/) - 提供强大的推理模型
 - [智谱AI](https://www.bigmodel.cn/) - 提供 GLM 系列模型
+- [Gin](https://github.com/gin-gonic/gin) - 高性能 Go Web 框架
+- [GORM](https://gorm.io/) - Go ORM 库
 - 所有贡献者和使用者
 
 ## 🔗 相关链接
 
 - [Eino 官方文档](https://www.cloudwego.io/zh/docs/eino/)
 - [Eino GitHub](https://github.com/cloudwego/eino)
-- [Eino-Ext 组件库](https://github.com/cloudwego/eino-ext)
 - [GLM Coding Plan](https://www.bigmodel.cn/glm-coding)
+- [DeepSeek API](https://platform.deepseek.com/)
+- [Ollama](https://ollama.com/) - 本地模型部署
 
 ---
 
