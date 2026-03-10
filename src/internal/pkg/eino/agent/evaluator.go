@@ -113,10 +113,10 @@ func (e *Evaluator) RunCase(ctx context.Context, testCase *EvaluationCase) *Test
 	)
 
 	// 计算得分
-	result.Score = e.calculateScore(result, testCase)
+	result.Score = e.CalculateScore(result, testCase)
 
 	// 判断是否通过
-	result.Passed = e.checkPassed(result, testCase)
+	result.Passed = e.CheckPassed(result, testCase)
 
 	return result
 }
@@ -221,8 +221,8 @@ func (e *Evaluator) evaluateSources(result *Result, requiredSources []string) (f
 	return found, missing
 }
 
-// calculateScore 计算得分
-func (e *Evaluator) calculateScore(result *TestEvaluationResult, testCase *EvaluationCase) float64 {
+// CalculateScore 计算得分
+func (e *Evaluator) CalculateScore(result *TestEvaluationResult, testCase *EvaluationCase) float64 {
 	var score float64
 
 	// 要点覆盖得分 (40%)
@@ -258,8 +258,8 @@ func (e *Evaluator) calculateScore(result *TestEvaluationResult, testCase *Evalu
 	return score
 }
 
-// checkPassed 检查是否通过
-func (e *Evaluator) checkPassed(result *TestEvaluationResult, testCase *EvaluationCase) bool {
+// CheckPassed 检查是否通过
+func (e *Evaluator) CheckPassed(result *TestEvaluationResult, testCase *EvaluationCase) bool {
 	// 检查置信度
 	if testCase.MinConfidence > 0 && result.ConfidenceScore < testCase.MinConfidence {
 		return false

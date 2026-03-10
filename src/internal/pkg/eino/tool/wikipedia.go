@@ -123,15 +123,25 @@ func (t *WikipediaTool) getPageContent(ctx context.Context, pageTitle string, la
 		return "", err
 	}
 
-	query := data["query"].(map[string]interface{})
-	pages := query["pages"].(map[string]interface{})
+	// P1 修复：使用安全类型断言代替强制断言，防止异常响应 panic
+	queryData, ok := data["query"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("unexpected API response format: missing 'query' field")
+	}
+	pages, ok := queryData["pages"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("unexpected API response format: missing 'pages' field")
+	}
 
 	for pageID, pageData := range pages {
 		if pageID == "-1" {
 			return "", nil
 		}
-		page := pageData.(map[string]interface{})
-		title := page["title"].(string)
+		page, ok := pageData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		title, _ := page["title"].(string)
 		extract := ""
 		if e, ok := page["extract"].(string); ok {
 			extract = e

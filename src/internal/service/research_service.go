@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ai-research-platform/internal/cache"
@@ -23,6 +24,10 @@ type ResearchService struct {
 	tools        []eino.InvokableTool
 	cache        cache.Cache
 	eventStream  *EventStream
+
+	// 会话生命周期管理：可取消的 context
+	activeSessions   map[string]context.CancelFunc
+	activeSessionsMu sync.Mutex
 }
 
 // NewResearchService creates a new research service
@@ -34,11 +39,12 @@ func NewResearchService(
 	eventStream *EventStream,
 ) *ResearchService {
 	return &ResearchService{
-		repo:        repo,
-		agent:       researchAgent,
-		tools:       tools,
-		cache:       cacheManager,
-		eventStream: eventStream,
+		repo:           repo,
+		agent:          researchAgent,
+		tools:          tools,
+		cache:          cacheManager,
+		eventStream:    eventStream,
+		activeSessions: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -69,20 +75,47 @@ func (s *ResearchService) StartResearch(ctx context.Context, userID, query strin
 		return nil, fmt.Errorf("failed to create research session: %w", err)
 	}
 
-	go s.executeResearch(context.Background(), session)
+	// 创建可取消的 context，与会话生命周期绑定
+	ctx, cancel := context.WithCancel(context.Background())
+	s.trackSession(session.ID, cancel)
+
+	go func() {
+		defer s.untrackSession(session.ID)
+		s.executeResearch(ctx, session)
+	}()
 
 	return session, nil
 }
 
 // ExecuteResearch 执行研究（公开方法，供API调用）
 func (s *ResearchService) ExecuteResearch(sessionID, query, researchType string) {
-	ctx := context.Background()
+	s.ExecuteResearchWithConfig(sessionID, query, researchType, "", "", nil)
+}
+
+// ExecuteResearchWithConfig 执行研究（含自定义 LLM/工具配置）
+func (s *ResearchService) ExecuteResearchWithConfig(sessionID, query, researchType, llmProvider, llmModel string, enabledTools []string) {
+	// 创建可取消的 context
+	ctx, cancel := context.WithCancel(context.Background())
+	s.trackSession(sessionID, cancel)
+
 	session := &models.ResearchSession{
 		ID:           sessionID,
 		Query:        query,
 		ResearchType: researchType,
 	}
-	s.executeResearch(ctx, session)
+
+	// TODO: 当 llmProvider/llmModel 非空时，动态切换 ChatModel
+	// TODO: 当 enabledTools 非空时，过滤 agent 使用的工具集
+	if llmProvider != "" || llmModel != "" || len(enabledTools) > 0 {
+		ctx = context.WithValue(ctx, "llm_provider", llmProvider)
+		ctx = context.WithValue(ctx, "llm_model", llmModel)
+		ctx = context.WithValue(ctx, "enabled_tools", enabledTools)
+	}
+
+	go func() {
+		defer s.untrackSession(sessionID)
+		s.executeResearch(ctx, session)
+	}()
 }
 
 // executeResearch 执行研究
@@ -128,6 +161,8 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 	if useParallel {
 		s.orchestrator.RegisterCallback(progressCallback)
 		result, err = s.orchestrator.Run(ctx, session.Query)
+		// P0 修复：执行完毕后清除回调，防止跨会话累积
+		s.orchestrator.ClearCallbacks()
 	} else {
 		if s.agent == nil {
 			if s.eventStream != nil {
@@ -141,6 +176,8 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 		}
 		s.agent.RegisterCallback(progressCallback)
 		result, err = s.agent.Run(ctx, session.Query)
+		// P0 修复：执行完毕后清除回调
+		s.agent.ClearCallbacks()
 	}
 
 	if err != nil {
@@ -159,6 +196,14 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 
 	// 保存研究结果
 	s.saveResearchResult(ctx, session, result)
+
+	// ======= Evaluator 接入：对研究结果做质量评分 =======
+	if s.agent != nil && result.Success {
+		evaluationScore := s.evaluateResult(result, session)
+		if evaluationScore >= 0 {
+			result.ConfidenceScore = (result.ConfidenceScore + evaluationScore) / 2
+		}
+	}
 
 	if s.repo != nil {
 		_ = s.repo.UpdateSessionStatus(ctx, session.ID, "completed", 1.0)
@@ -355,6 +400,14 @@ func (s *ResearchService) GetUserSessions(ctx context.Context, userID string, li
 
 // CancelResearch cancels an ongoing research session
 func (s *ResearchService) CancelResearch(ctx context.Context, sessionID string) error {
+	// 取消正在运行的 goroutine
+	s.activeSessionsMu.Lock()
+	if cancel, ok := s.activeSessions[sessionID]; ok {
+		cancel()
+		delete(s.activeSessions, sessionID)
+	}
+	s.activeSessionsMu.Unlock()
+
 	if err := s.repo.UpdateSessionStatus(ctx, sessionID, "failed", 0.0); err != nil {
 		return fmt.Errorf("failed to cancel research: %w", err)
 	}
@@ -374,15 +427,72 @@ func (s *ResearchService) CancelResearch(ctx context.Context, sessionID string) 
 	return nil
 }
 
+// trackSession 追踪活跃会话的 cancel 函数
+func (s *ResearchService) trackSession(sessionID string, cancel context.CancelFunc) {
+	s.activeSessionsMu.Lock()
+	// 如果有旧的同 ID 会话正在运行，先取消它
+	if oldCancel, ok := s.activeSessions[sessionID]; ok {
+		oldCancel()
+	}
+	s.activeSessions[sessionID] = cancel
+	s.activeSessionsMu.Unlock()
+}
+
+// untrackSession 移除已完成的会话
+func (s *ResearchService) untrackSession(sessionID string) {
+	s.activeSessionsMu.Lock()
+	delete(s.activeSessions, sessionID)
+	s.activeSessionsMu.Unlock()
+}
+
+// evaluateResult 使用 Evaluator 对研究结果质量评分
+func (s *ResearchService) evaluateResult(result *agent.Result, session *models.ResearchSession) float64 {
+	if s.agent == nil || !result.Success || result.FinalAnswer == "" {
+		return -1
+	}
+
+	// 构造轻量评测用例（仅做质量把关，不做完整回归评测）
+	testCase := &agent.EvaluationCase{
+		ID:              "runtime_" + session.ID,
+		Query:           result.Query,
+		ExpectedPoints:  []string{}, // 运行时评测不设预期要点
+		RequiredSources: []string{},
+		MinConfidence:   0.3,
+		MaxTimeSeconds:  0, // 已经执行完毕，不限时
+	}
+
+	evaluator := agent.NewEvaluator(s.agent)
+
+	// 直接用已有结果构造评测结果，不重新执行研究
+	evalResult := &agent.TestEvaluationResult{
+		CaseID:          testCase.ID,
+		Query:           result.Query,
+		Timestamp:       time.Now(),
+		Details:         result,
+		ConfidenceScore: result.ConfidenceScore,
+	}
+
+	// 计算得分
+	evalResult.Score = evaluator.CalculateScore(evalResult, testCase)
+	evalResult.Passed = evaluator.CheckPassed(evalResult, testCase)
+
+	// 归一化到 0-1
+	return evalResult.Score / 100.0
+}
+
 // getSourceType 根据工具名称返回来源类型
 func getSourceType(toolName string) string {
 	switch toolName {
-	case "web_search":
+	case "web_search", "web_search_prime":
 		return "web"
+	case "web_reader":
+		return "web_page"
 	case "wikipedia":
 		return "wikipedia"
 	case "arxiv_search", "arxiv":
 		return "arxiv"
+	case "zread_repo":
+		return "github"
 	default:
 		return "search"
 	}
@@ -391,12 +501,16 @@ func getSourceType(toolName string) string {
 // getSourceTitle 根据工具名称和思考内容生成来源标题
 func getSourceTitle(toolName, thought string) string {
 	switch toolName {
-	case "web_search":
+	case "web_search", "web_search_prime":
 		return "网络搜索"
+	case "web_reader":
+		return "网页全文"
 	case "wikipedia":
 		return "维基百科"
 	case "arxiv_search", "arxiv":
 		return "学术论文"
+	case "zread_repo":
+		return "代码仓库"
 	default:
 		if thought != "" && len(thought) < 50 {
 			return thought

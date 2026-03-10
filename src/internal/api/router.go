@@ -19,6 +19,7 @@ type RouterEnhanced struct {
     membershipAPI   *v1.MembershipAPI
     notificationAPI *v1.NotificationAPI
     aiQuestionAPI   *v1.AIQuestionAPI
+    paperAPI        *v1.PaperAPI
 }
 
 // NewRouterEnhanced 创建增强的路由器
@@ -72,7 +73,8 @@ func NewRouterEnhancedFull(
     adminAPI *v1.AdminAPI,
     membershipAPI *v1.MembershipAPI,
     notificationAPI *v1.NotificationAPI,
-    aiQuestionAPI ...*v1.AIQuestionAPI,
+    aiQuestionAPI *v1.AIQuestionAPI,
+    paperAPI ...*v1.PaperAPI,
 ) *RouterEnhanced {
     r := &RouterEnhanced{
         authAPI:         authAPI,
@@ -84,9 +86,10 @@ func NewRouterEnhancedFull(
         adminAPI:        adminAPI,
         membershipAPI:   membershipAPI,
         notificationAPI: notificationAPI,
+        aiQuestionAPI:   aiQuestionAPI,
     }
-    if len(aiQuestionAPI) > 0 && aiQuestionAPI[0] != nil {
-        r.aiQuestionAPI = aiQuestionAPI[0]
+    if len(paperAPI) > 0 && paperAPI[0] != nil {
+        r.paperAPI = paperAPI[0]
     }
     return r
 }
@@ -310,6 +313,31 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
                 {
                     adminAIGroup.PUT("/question-config", r.aiQuestionAPI.UpdateAIQuestionConfig)
                 }
+            }
+        }
+
+        // 论文生成路由
+        if r.paperAPI != nil {
+            // 公开接口（模板/引用格式查询）
+            paperPublicGroup := v1Group.Group("/paper")
+            {
+                paperPublicGroup.GET("/templates", r.paperAPI.GetTemplates)
+                paperPublicGroup.GET("/citation-styles", r.paperAPI.GetCitationStyles)
+            }
+
+            // 需要认证的论文路由（包括 SSE 流）
+            paperGroup := v1Group.Group("/paper")
+            paperGroup.Use(middleware.Auth())
+            {
+                paperGroup.POST("/start", r.paperAPI.StartPaperGeneration)
+                paperGroup.GET("/status/:id", r.paperAPI.GetPaperStatus)
+                paperGroup.GET("/result/:id", r.paperAPI.GetPaperResult)
+                paperGroup.GET("/export/:id", r.paperAPI.ExportPaper)
+                paperGroup.GET("/list", r.paperAPI.ListPapers)
+                paperGroup.DELETE("/:id", r.paperAPI.DeletePaper)
+                paperGroup.POST("/regenerate", r.paperAPI.RegenerateChapter)
+                // SSE 流端点也需要认证
+                paperGroup.GET("/stream/:id", r.paperAPI.StreamProgress)
             }
         }
     }

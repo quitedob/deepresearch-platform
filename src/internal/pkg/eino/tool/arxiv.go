@@ -124,7 +124,7 @@ func (t *ArxivTool) search(ctx context.Context, query string, maxResults int) ([
 	params.Set("max_results", fmt.Sprintf("%d", maxResults))
 	params.Set("sortBy", "relevance")
 
-	apiURL := fmt.Sprintf("http://export.arxiv.org/api/query?%s", params.Encode())
+	apiURL := fmt.Sprintf("https://export.arxiv.org/api/query?%s", params.Encode())
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err

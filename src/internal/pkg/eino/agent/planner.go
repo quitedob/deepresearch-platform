@@ -69,7 +69,7 @@ func (p *ResearchPlanner) CreatePlan(ctx context.Context, query string) (*Enhanc
       "required_evidence": ["数据统计", "专家观点"]
     }
   ],
-  "required_tools": ["web_search", "wikipedia"],
+  "required_tools": ["web_search_prime", "wikipedia"],
   "expected_depth": 2,
   "evidence_threshold": 0.7,
   "estimated_time_min": 5
@@ -122,7 +122,7 @@ func (p *ResearchPlanner) defaultPlan(query string) *EnhancedPlan {
 				RequiredEvidence: []string{"详细分析"},
 			},
 		},
-		RequiredTools:     []string{"web_search", "wikipedia", "arxiv_search"},
+		RequiredTools:     []string{"web_search_prime", "wikipedia", "arxiv_search"},
 		ExpectedDepth:     3,
 		EvidenceThreshold: 0.75,
 		EstimatedTime:     5,
@@ -140,7 +140,7 @@ func (p *ResearchPlanner) validatePlan(plan *EnhancedPlan, query string) {
 		}
 	}
 	if len(plan.RequiredTools) == 0 {
-		plan.RequiredTools = []string{"web_search", "wikipedia"}
+		plan.RequiredTools = []string{"web_search_prime", "wikipedia"}
 	}
 	if plan.ExpectedDepth == 0 {
 		plan.ExpectedDepth = 2
@@ -222,20 +222,22 @@ func (p *ResearchPlanner) GetNextSubQuestion(plan *EnhancedPlan) *SubQuestion {
 }
 
 // GetToolForStrategy 根据搜索策略获取工具名称
+// 修复：优先使用 web_search_prime（增强搜索 MCP），提高搜索质量
 func (p *ResearchPlanner) GetToolForStrategy(strategy string, depth int) string {
 	switch strategy {
 	case "web":
-		return "web_search"
+		// 优先使用增强搜索
+		return "web_search_prime"
 	case "arxiv":
 		return "arxiv_search"
 	case "wiki":
 		return "wikipedia"
 	case "mixed":
-		// 混合策略：根据深度轮换
-		tools := []string{"web_search", "wikipedia", "arxiv_search"}
+		// 混合策略：根据深度轮换，优先使用增强搜索
+		tools := []string{"web_search_prime", "wikipedia", "arxiv_search"}
 		return tools[depth%len(tools)]
 	default:
-		return "web_search"
+		return "web_search_prime"
 	}
 }
 

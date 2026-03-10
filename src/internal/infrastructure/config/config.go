@@ -2,6 +2,8 @@
 
 import (
     "os"
+    "regexp"
+    "strings"
     
     "github.com/joho/godotenv"
     "github.com/spf13/viper"
@@ -125,6 +127,9 @@ func Load(configPath string) (*Config, error) {
         return nil, err
     }
 
+    // 展开 ${ENV_VAR:default} 模式的环境变量引用
+    expandEnvVars()
+
     var config Config
     if err := viper.Unmarshal(&config); err != nil {
         return nil, err
@@ -179,4 +184,37 @@ func Load(configPath string) (*Config, error) {
     }
 
     return &config, nil
+}
+
+// envVarPattern matches ${VAR_NAME} and ${VAR_NAME:default_value}
+var envVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}`)
+
+// expandEnvVars walks all viper settings and expands ${VAR:default} patterns
+func expandEnvVars() {
+    for _, key := range viper.AllKeys() {
+        val := viper.GetString(key)
+        if strings.Contains(val, "${") {
+            expanded := expandString(val)
+            viper.Set(key, expanded)
+        }
+    }
+}
+
+// expandString replaces all ${VAR:default} occurrences in a string
+func expandString(s string) string {
+    return envVarPattern.ReplaceAllStringFunc(s, func(match string) string {
+        parts := envVarPattern.FindStringSubmatch(match)
+        if len(parts) < 2 {
+            return match
+        }
+        envKey := parts[1]
+        defaultVal := ""
+        if len(parts) >= 3 {
+            defaultVal = parts[2]
+        }
+        if envValue := os.Getenv(envKey); envValue != "" {
+            return envValue
+        }
+        return defaultVal
+    })
 }

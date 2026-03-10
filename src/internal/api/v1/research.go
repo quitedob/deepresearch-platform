@@ -113,7 +113,7 @@ func (api *ResearchAPI) StartResearch(c *gin.Context) {
 		ResearchType: req.ResearchType,
 	}
 
-	if req.LLMConfig != nil || req.ToolsConfig != nil {
+	if req.LLMConfig != nil || req.ToolsConfig != nil || req.Options != nil {
 		metadata := map[string]interface{}{
 			"llm_config":   req.LLMConfig,
 			"tools_config": req.ToolsConfig,
@@ -145,8 +145,19 @@ func (api *ResearchAPI) StartResearch(c *gin.Context) {
 		return
 	}
 
+	// 传递 LLM/工具配置到执行链路
+	var llmProvider, llmModel string
+	var enabledTools []string
+	if req.LLMConfig != nil {
+		llmProvider = req.LLMConfig.Provider
+		llmModel = req.LLMConfig.Model
+	}
+	if req.ToolsConfig != nil {
+		enabledTools = req.ToolsConfig.EnabledTools
+	}
+
 	go func() {
-		api.researchService.ExecuteResearch(session.ID, req.Query, req.ResearchType)
+		api.researchService.ExecuteResearchWithConfig(session.ID, req.Query, req.ResearchType, llmProvider, llmModel, enabledTools)
 	}()
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -342,9 +353,11 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate") // P0: 防止代理/日志缓存含token的URL
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
+	c.Header("Referrer-Policy", "no-referrer")                       // P0: 防止token通过Referer头泄露
+	c.Header("Content-Security-Policy", "default-src 'none'")        // SSE不需要加载任何资源
 
 	c.SSEvent("message", gin.H{"type": "connected", "session_id": sessionID})
 	c.Writer.Flush()

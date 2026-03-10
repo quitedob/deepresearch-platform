@@ -133,8 +133,14 @@ func NewResearchAgent(chatModel model.ChatModel, tools []tool.InvokableTool, con
 }
 
 // RegisterCallback 注册进度回调
+// P0 修复：每次注册时重置回调列表，防止跨会话回调累积
 func (a *ResearchAgent) RegisterCallback(callback ProgressCallback) {
-	a.callbacks = append(a.callbacks, callback)
+	a.callbacks = []ProgressCallback{callback}
+}
+
+// ClearCallbacks 清除所有回调（用于会话结束后释放资源）
+func (a *ResearchAgent) ClearCallbacks() {
+	a.callbacks = nil
 }
 
 func (a *ResearchAgent) emitProgress(event *ProgressEvent) {
@@ -240,9 +246,16 @@ func (a *ResearchAgent) Run(ctx context.Context, query string) (*Result, error) 
 				collectedInfo = append(collectedInfo, searchResult)
 				toolsUsedSet[usedTool] = true
 
+				// 主动调度 web_reader：从搜索结果中提取 URL 并深度读取
+				deepContents := a.deepReadURLs(ctx, searchResult, 2)
+				for _, dc := range deepContents {
+					collectedInfo = append(collectedInfo, dc)
+					toolsUsedSet["web_reader"] = true
+				}
+
 				// 更新子问题的证据计数
 				if nextSQ != nil && i == 0 {
-					nextSQ.EvidenceCount++
+					nextSQ.EvidenceCount += 1 + len(deepContents)
 				}
 
 				result.Steps = append(result.Steps, Step{
@@ -255,6 +268,19 @@ func (a *ResearchAgent) Run(ctx context.Context, query string) (*Result, error) 
 					Timestamp:   time.Now(),
 				})
 				stepNumber++
+
+				if len(deepContents) > 0 {
+					result.Steps = append(result.Steps, Step{
+						StepNumber:  stepNumber,
+						Phase:       "deep_reading",
+						Thought:     fmt.Sprintf("深度读取 %d 个网页获取详细内容", len(deepContents)),
+						Action:      "web_reader",
+						Observation: fmt.Sprintf("成功获取 %d 篇网页全文", len(deepContents)),
+						Quality:     0.9,
+						Timestamp:   time.Now(),
+					})
+					stepNumber++
+				}
 			}
 		}
 
@@ -458,10 +484,26 @@ func (a *ResearchAgent) executeSearchWithTool(ctx context.Context, question stri
 		for _, t := range a.tools {
 			info, _ := t.Info(ctx)
 			if info != nil && info.Name == preferredTool {
-				args := fmt.Sprintf(`{"query": "%s"}`, strings.ReplaceAll(question, `"`, `\"`))
-				result, err := t.InvokableRun(ctx, args)
-				if err == nil && result != "" {
-					return result, preferredTool
+				// 根据工具类型构建正确的参数
+				escaped := strings.ReplaceAll(question, `"`, `\"`)
+				var args string
+				switch preferredTool {
+				case "web_search_prime":
+					args = fmt.Sprintf(`{"search_query": "%s", "content_size": "medium"}`, escaped)
+				case "web_reader":
+					if strings.HasPrefix(question, "http://") || strings.HasPrefix(question, "https://") {
+						args = fmt.Sprintf(`{"url": "%s"}`, escaped)
+					} else {
+						break // web_reader 需要 URL
+					}
+				default:
+					args = fmt.Sprintf(`{"query": "%s"}`, escaped)
+				}
+				if args != "" {
+					result, err := t.InvokableRun(ctx, args)
+					if err == nil && result != "" {
+						return result, preferredTool
+					}
 				}
 			}
 		}
@@ -469,6 +511,89 @@ func (a *ResearchAgent) executeSearchWithTool(ctx context.Context, question stri
 	
 	// 回退到默认搜索逻辑
 	return a.executeSearch(ctx, question, depth)
+}
+
+// findToolByName 按名称查找工具
+func (a *ResearchAgent) findToolByName(ctx context.Context, name string) tool.InvokableTool {
+	for _, t := range a.tools {
+		info, _ := t.Info(ctx)
+		if info != nil && info.Name == name {
+			return t
+		}
+	}
+	return nil
+}
+
+// extractURLsFromText 从文本中提取 HTTP/HTTPS URL
+func extractURLsFromText(text string) []string {
+	var urls []string
+	seen := make(map[string]bool)
+	
+	// 简单但有效的 URL 提取：匹配 http:// 或 https:// 开头的连续非空白字符
+	words := strings.Fields(text)
+	for _, word := range words {
+		// 清理常见尾部标点
+		word = strings.TrimRight(word, ".,;:!?\"')>]）。，；：！？」』】")
+		if (strings.HasPrefix(word, "http://") || strings.HasPrefix(word, "https://")) && !seen[word] {
+			// 跳过明显无用的 URL（搜索引擎 cache 页、短 URL 等）
+			if strings.Contains(word, "google.com/search") ||
+				strings.Contains(word, "bing.com/search") ||
+				strings.Contains(word, "baidu.com/s?") {
+				continue
+			}
+			urls = append(urls, word)
+			seen[word] = true
+		}
+	}
+	return urls
+}
+
+// deepReadURLs 从搜索结果中提取 URL 并使用 web_reader 深度读取
+// maxURLs 控制最多读取多少个 URL（避免过度消耗时间和配额）
+func (a *ResearchAgent) deepReadURLs(ctx context.Context, searchResult string, maxURLs int) []string {
+	// 查找 web_reader 工具
+	wrTool := a.findToolByName(ctx, "web_reader")
+	if wrTool == nil {
+		return nil
+	}
+	
+	// 提取 URL
+	urls := extractURLsFromText(searchResult)
+	if len(urls) == 0 {
+		return nil
+	}
+	
+	// 限制数量
+	if len(urls) > maxURLs {
+		urls = urls[:maxURLs]
+	}
+	
+	var results []string
+	for _, u := range urls {
+		// 检查 context 是否已取消
+		select {
+		case <-ctx.Done():
+			return results
+		default:
+		}
+		
+		escaped := strings.ReplaceAll(u, `"`, `\"`)
+		args := fmt.Sprintf(`{"url": "%s"}`, escaped)
+		
+		// 使用子 context 限制单 URL 读取时间
+		readCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		content, err := wrTool.InvokableRun(readCtx, args)
+		cancel()
+		
+		if err == nil && content != "" && len(content) > 100 {
+			// 截断过长内容，避免上下文爆炸
+			if len(content) > 5000 {
+				content = content[:5000] + "\n...[内容已截断]"
+			}
+			results = append(results, content)
+		}
+	}
+	return results
 }
 
 
@@ -486,7 +611,7 @@ func (a *ResearchAgent) createResearchPlan(ctx context.Context, query string) (*
 {
   "main_question": "原始问题",
   "sub_questions": ["子问题1", "子问题2", "子问题3"],
-  "required_tools": ["web_search", "wikipedia"],
+  "required_tools": ["web_search_prime", "wikipedia"],
   "expected_depth": 2
 }
 
@@ -516,7 +641,7 @@ func (a *ResearchAgent) createResearchPlan(ctx context.Context, query string) (*
 		return &ResearchPlan{
 			MainQuestion:  query,
 			SubQuestions:  []string{query},
-			RequiredTools: []string{"web_search", "wikipedia"},
+			RequiredTools: []string{"web_search_prime", "wikipedia"},
 			ExpectedDepth: 2,
 		}, nil
 	}
@@ -541,10 +666,10 @@ func (a *ResearchAgent) executeSearch(ctx context.Context, question string, dept
 	questionLower := strings.ToLower(question)
 	
 	if depth == 0 {
-		// 第一轮：优先使用 web_search
+		// 第一轮：优先使用 web_search_prime（增强搜索）
 		for _, t := range a.tools {
 			info, _ := t.Info(ctx)
-			if info != nil && info.Name == "web_search" {
+			if info != nil && info.Name == "web_search_prime" {
 				selectedTool = t
 				toolName = info.Name
 				break
@@ -575,13 +700,18 @@ func (a *ResearchAgent) executeSearch(ctx context.Context, question string, dept
 		}
 	}
 	
-	// 如果没有选中特定工具，默认使用 web_search
+	// 如果没有选中特定工具，默认使用 web_search_prime，退而求其次 web_search
 	if selectedTool == nil {
-		for _, t := range a.tools {
-			info, _ := t.Info(ctx)
-			if info != nil && info.Name == "web_search" {
-				selectedTool = t
-				toolName = info.Name
+		for _, fallbackName := range []string{"web_search_prime", "web_search"} {
+			for _, t := range a.tools {
+				info, _ := t.Info(ctx)
+				if info != nil && info.Name == fallbackName {
+					selectedTool = t
+					toolName = info.Name
+					break
+				}
+			}
+			if selectedTool != nil {
 				break
 			}
 		}
@@ -602,13 +732,28 @@ func (a *ResearchAgent) executeSearch(ctx context.Context, question string, dept
 		return "", ""
 	}
 	
-	// 构建工具参数
-	args := fmt.Sprintf(`{"query": "%s"}`, strings.ReplaceAll(question, `"`, `\"`))
+	// 构建工具参数（根据工具类型选择正确的参数名）
+	escaped := strings.ReplaceAll(question, `"`, `\"`)
+	var args string
+	switch toolName {
+	case "web_search_prime":
+		args = fmt.Sprintf(`{"search_query": "%s", "content_size": "medium"}`, escaped)
+	case "web_reader":
+		if strings.HasPrefix(question, "http://") || strings.HasPrefix(question, "https://") {
+			args = fmt.Sprintf(`{"url": "%s"}`, escaped)
+		} else {
+			return "", toolName // web_reader 需要 URL，非 URL 输入直接跳过
+		}
+	default:
+		args = fmt.Sprintf(`{"query": "%s"}`, escaped)
+	}
 	
 	// 直接调用工具
 	result, err := selectedTool.InvokableRun(ctx, args)
 	if err != nil {
-		return fmt.Sprintf("搜索失败: %v", err), toolName
+		// P1 修复：不再将错误字符串作为搜索结果返回
+		// 之前错误信息会被当作"有效证据"入池，污染结论
+		return "", toolName
 	}
 	
 	if result == "" {

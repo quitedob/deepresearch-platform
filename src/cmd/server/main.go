@@ -14,6 +14,7 @@ import (
 	v1 "github.com/ai-research-platform/internal/api/v1"
 	"github.com/ai-research-platform/internal/cache"
 	"github.com/ai-research-platform/internal/pkg/eino"
+	"github.com/ai-research-platform/internal/pkg/eino/agent"
 	"github.com/ai-research-platform/internal/infrastructure/config"
 	"github.com/ai-research-platform/internal/infrastructure/database"
 	"github.com/ai-research-platform/internal/infrastructure/logger"
@@ -24,6 +25,15 @@ import (
 	"github.com/ai-research-platform/internal/types/constant"
 	"go.uber.org/zap"
 )
+
+// maskAPIKey 安全地掩码 API 密钥，仅显示前4字符
+// P1 修复：避免对短字符串切片导致 panic，减少敏感信息暴露
+func maskAPIKey(key string) string {
+	if len(key) <= 4 {
+		return "****"
+	}
+	return key[:4] + "****"
+}
 
 func main() {
 	configPath := flag.String("config", "src/configs/config.yaml", "配置文件路径")
@@ -113,6 +123,8 @@ func main() {
 	var modelConfigDAO *dao.ModelConfigDAO
 	var quotaConfigDAO *dao.QuotaConfigDAO
 	var aiQuestionDAO *dao.AIQuestionDAO
+	var paperDAO *dao.PaperDAO
+	var toolCallDAO *dao.ToolCallDAO
 	if db != nil {
 		userDAO = dao.NewUserDAO(db)
 		chatDAO = dao.NewChatDAO(db)
@@ -124,6 +136,8 @@ func main() {
 		modelConfigDAO = dao.NewModelConfigDAO(db)
 		quotaConfigDAO = dao.NewQuotaConfigDAO(db)
 		aiQuestionDAO = dao.NewAIQuestionDAO(db)
+		paperDAO = dao.NewPaperDAO(db)
+		toolCallDAO = dao.NewToolCallDAO(db)
 	}
 
 	// 初始化认证组件
@@ -137,7 +151,7 @@ func main() {
 	if deepseekCfg, ok := cfg.LLM.Providers["deepseek"]; ok && deepseekCfg.APIKey != "" {
 		log.Info("注册 DeepSeek Provider",
 			zap.Strings("models", deepseekCfg.Models),
-			zap.String("api_key_prefix", deepseekCfg.APIKey[:10]+"..."))
+			zap.String("api_key_masked", maskAPIKey(deepseekCfg.APIKey)))
 		for _, modelName := range deepseekCfg.Models {
 			deepseekModel, err := createDeepSeekModel(deepseekCfg.APIKey, modelName)
 			if err != nil {
@@ -159,7 +173,7 @@ func main() {
 	if zhipuCfg, ok := cfg.LLM.Providers["zhipu"]; ok && zhipuCfg.APIKey != "" {
 		log.Info("注册智谱AI Provider",
 			zap.Strings("models", zhipuCfg.Models),
-			zap.String("api_key_prefix", zhipuCfg.APIKey[:10]+"..."),
+			zap.String("api_key_masked", maskAPIKey(zhipuCfg.APIKey)),
 			zap.String("base_url", zhipuCfg.BaseURL))
 		for _, modelName := range zhipuCfg.Models {
 			zhipuModel, err := createZhipuModelWithJWT(zhipuCfg.APIKey, zhipuCfg.BaseURL, modelName)
@@ -204,7 +218,7 @@ func main() {
 	if openrouterCfg, ok := cfg.LLM.Providers["openrouter"]; ok && openrouterCfg.APIKey != "" {
 		log.Info("注册 OpenRouter Provider",
 			zap.Strings("models", openrouterCfg.Models),
-			zap.String("api_key_prefix", openrouterCfg.APIKey[:10]+"..."),
+			zap.String("api_key_masked", maskAPIKey(openrouterCfg.APIKey)),
 			zap.String("base_url", openrouterCfg.BaseURL))
 		for _, modelName := range openrouterCfg.Models {
 			openrouterModel, err := createOpenRouterModel(openrouterCfg.APIKey, openrouterCfg.BaseURL, modelName)
@@ -227,7 +241,7 @@ func main() {
 	if openaiCfg, ok := cfg.LLM.Providers["openai"]; ok && openaiCfg.APIKey != "" {
 		log.Info("注册 OpenAI兼容 Provider (GLM Coding Plan)",
 			zap.Strings("models", openaiCfg.Models),
-			zap.String("api_key_prefix", openaiCfg.APIKey[:10]+"..."),
+			zap.String("api_key_masked", maskAPIKey(openaiCfg.APIKey)),
 			zap.String("base_url", openaiCfg.BaseURL))
 		for _, modelName := range openaiCfg.Models {
 			openaiModel, err := createOpenAICompatibleModel(openaiCfg.APIKey, openaiCfg.BaseURL, modelName)
@@ -248,6 +262,7 @@ func main() {
 
 	// ==================== 初始化深度研究服务 ====================
 	var researchService *service.ResearchService
+	var researchTools []eino.InvokableTool // 提前声明，供 MCP API 复用
 
 	// 优先使用智谱AI模型进行深度研究（glm-4.7 或 glm-4.5-air）
 	if zhipuCfg, ok := cfg.LLM.Providers["zhipu"]; ok && zhipuCfg.APIKey != "" {
@@ -285,7 +300,7 @@ func main() {
 				EnableWebReader:    true,
 				EnableSearchPrime:  true, // 启用 Web Search Prime MCP（增强搜索）
 			}
-			researchTools := eino.CreateResearchTools(toolsConfig)
+			researchTools = eino.CreateResearchTools(toolsConfig)
 			log.Info("研究工具创建成功", zap.Int("tools_count", len(researchTools)))
 
 			// 创建研究Agent配置
@@ -337,20 +352,76 @@ func main() {
 		log.Warn("智谱AI未配置，深度研究服务将不可用")
 	}
 
+	// ==================== 初始化论文生成服务 ====================
+	var paperService *service.PaperService
+	var paperAPI *v1.PaperAPI
+
+	if zhipuCfg, ok := cfg.LLM.Providers["zhipu"]; ok && zhipuCfg.APIKey != "" && db != nil {
+		log.Info("初始化论文生成服务...")
+
+		// 选择论文生成用的模型（优先使用 glm-4.7）
+		paperModelName := "glm-4.7"
+		if len(zhipuCfg.Models) > 0 {
+			hasGLM47 := false
+			for _, m := range zhipuCfg.Models {
+				if m == "glm-4.7" {
+					hasGLM47 = true
+					break
+				}
+			}
+			if !hasGLM47 {
+				paperModelName = zhipuCfg.Models[0]
+			}
+		}
+
+		paperChatModel, err := createZhipuModelWithJWT(zhipuCfg.APIKey, zhipuCfg.BaseURL, paperModelName)
+		if err != nil {
+			log.Error("创建论文ChatModel失败", zap.Error(err))
+		} else if paperChatModel != nil {
+			// 创建论文工具
+			paperToolsConfig := eino.ToolsConfig{
+				WebSearchAPIKey:    zhipuCfg.APIKey,
+				ArxivMaxResults:    10,
+				WikipediaLanguage:  "zh",
+				Timeout:            60 * time.Second,
+				EnableReliability:  true,
+				EnableZRead:        true,
+				EnableWebReader:    true,
+				EnableSearchPrime:  true,
+			}
+			paperTools := eino.CreateResearchTools(paperToolsConfig)
+
+			// 创建PaperAgent
+			paperAgentConfig := agent.DefaultPaperAgentConfig()
+			paperAgent := agent.NewPaperAgent(paperChatModel, paperTools, paperAgentConfig)
+			log.Info("论文Agent创建成功", zap.String("model", paperModelName))
+
+			// 创建PaperRepository
+			paperRepo := repository.NewPaperRepository(db)
+
+			// 创建PaperService
+			paperService = service.NewPaperService(paperRepo, paperAgent, log)
+			paperAPI = v1.NewPaperAPI(paperDAO, paperService)
+			log.Info("论文生成服务初始化成功")
+		}
+	} else {
+		log.Warn("论文生成服务未初始化（需要智谱AI配置和数据库连接）")
+	}
+
 	// 初始化API层
 	userAPI := v1.NewUserAPIEnhancedWithPreferences(jwtManager, nil, userDAO, userPreferencesDAO)
 	chatAPI := v1.NewChatAPIFull(chatDAO, userPreferencesDAO, membershipDAO, modelConfigDAO, llmScheduler)
 	researchAPI := v1.NewResearchAPI(researchDAO, researchService)
 	llmAPI := v1.NewLLMAPIWithDAO(llmScheduler, modelConfigDAO)
 	healthAPI := v1.NewHealthAPI(db, nil)
-	mcpAPI := v1.NewMCPAPI()
+	mcpAPI := v1.NewMCPAPIWithTools(researchTools, toolCallDAO)
 	notificationAPI := v1.NewNotificationAPI(notificationDAO)
 	adminAPI := v1.NewAdminAPIWithScheduler(userDAO, chatDAO, membershipDAO, activationCodeDAO, notificationDAO, modelConfigDAO, quotaConfigDAO, llmScheduler)
 	membershipAPI := v1.NewMembershipAPI(membershipDAO, activationCodeDAO)
 	aiQuestionAPI := v1.NewAIQuestionAPIFull(llmScheduler, aiQuestionDAO)
 
 	// 初始化增强路由（包含所有API）
-	router := api.NewRouterEnhancedFull(userAPI, chatAPI, researchAPI, llmAPI, healthAPI, mcpAPI, adminAPI, membershipAPI, notificationAPI, aiQuestionAPI)
+	router := api.NewRouterEnhancedFull(userAPI, chatAPI, researchAPI, llmAPI, healthAPI, mcpAPI, adminAPI, membershipAPI, notificationAPI, aiQuestionAPI, paperAPI)
 	engine := router.SetupEnhanced()
 
 	// 启动HTTP服务器

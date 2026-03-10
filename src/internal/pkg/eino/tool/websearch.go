@@ -129,9 +129,8 @@ func (t *WebSearchTool) searchZhipu(ctx context.Context, query string) (string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", jwtToken))
 
-	// 使用带超时的 client
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	// 使用已有 client（复用连接池）
+	resp, err := t.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("HTTP request failed: %w", err)
 	}

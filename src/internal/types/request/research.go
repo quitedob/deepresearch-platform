@@ -2,7 +2,7 @@ package request
 
 // StartResearchRequest 开始研究请求
 type StartResearchRequest struct {
-	Query        string            `json:"query" binding:"required,min=1,max=2000"`
+	Query        string            `json:"query" binding:"required,min=1,max=10000"`
 	ResearchType string            `json:"research_type"` // quick, deep, comprehensive
 	LLMConfig    *LLMConfig        `json:"llm_config,omitempty"`
 	ToolsConfig  *ToolsConfig      `json:"tools_config,omitempty"`

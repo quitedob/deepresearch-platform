@@ -8,7 +8,7 @@ database:
   host: localhost
   port: 5432
   user: postgres
-  password: "1234"
+  password: "${DB_PASSWORD:}"
   db_name: go_deep_research
   ssl_mode: disable
   max_connections: 100
@@ -27,7 +27,7 @@ llm:
   retries: 3
   providers:
     deepseek:
-      api_key: "sk-6f9bbda5a4e14c2c91a9baeb604f6abe"
+      api_key: "${DEEPSEEK_API_KEY:}"
       base_url: https://api.deepseek.com
       models:
         - deepseek-chat      # DeepSeek-V3.2-Exp 非思考模式
@@ -36,7 +36,7 @@ llm:
       temperature: 1.0
       max_tokens: 4096
     zhipu:
-      api_key: "82c46ba95a2d454f98d0de954970e2ae.g0yvxIXhxwDt4cU9"
+      api_key: "${ZHIPU_API_KEY:}"
       base_url: https://open.bigmodel.cn/api/paas/v4
       models:
         - glm-4.7
@@ -45,12 +45,12 @@ llm:
       temperature: 0.7
       max_tokens: 4096
     openai:
-      api_key: "82c46ba95a2d454f98d0de954970e2ae.g0yvxIXhxwDt4cU9"
-      base_url: https://api.z.ai/api/coding/paas/v4
+      api_key: "${OPENAI_API_KEY:}"
+      base_url: "${OPENAI_BASE_URL:https://api.openai.com/v1}"
       models:
-        - glm-4.7
-        - glm-4.5-air
-      default_model: glm-4.5-air
+        - gpt-4o
+        - gpt-4o-mini
+      default_model: gpt-4o-mini
       temperature: 0.7
       max_tokens: 4096
     ollama:
@@ -64,7 +64,7 @@ llm:
       temperature: 0.7
       max_tokens: 4096
     openrouter:
-      api_key: "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"
+      api_key: "${OPENROUTER_API_KEY:}"
       base_url: https://openrouter.ai/api/v1
       models:
         - moonshotai/kimi-k2:free
@@ -86,7 +86,7 @@ ai_question:
   max_questions_per_request: 20
 
 security:
-  jwt_secret: change-this-to-a-strong-random-secret-in-production
+  jwt_secret: "${JWT_SECRET:change-this-to-a-strong-random-secret-in-production}"
   jwt_expiration: 86400
   bcrypt_cost: 12
   cors:

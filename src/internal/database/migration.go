@@ -58,6 +58,12 @@ func AllModels() []interface{} {
 		&model.AIQuestionMessage{},
 		&model.AIGeneratedQuestion{},
 		&model.AIQuestionConfig{},
+		// 论文生成相关
+		&model.PaperSession{},
+		&model.PaperChapter{},
+		&model.PaperCitation{},
+		&model.PaperReview{},
+		&model.PaperSearchRecord{},
 	}
 }
 
@@ -87,6 +93,11 @@ func RequiredTables() []string {
 		"ai_question_messages",
 		"ai_generated_questions",
 		"ai_question_configs",
+		"paper_sessions",
+		"paper_chapters",
+		"paper_citations",
+		"paper_reviews",
+		"paper_search_records",
 	}
 }
 
@@ -110,6 +121,11 @@ var TableColumnRequirements = map[string][]string{
 	"provider_configs":   {"id", "provider", "is_enabled"},
 	"model_configs":      {"id", "provider", "model_name", "is_enabled"},
 	"quota_configs":      {"id", "membership_type", "chat_limit", "research_limit"},
+	"paper_sessions":     {"id", "user_id", "title", "topic", "status"},
+	"paper_chapters":     {"id", "paper_id", "chapter_type", "title"},
+	"paper_citations":    {"id", "paper_id", "citation_type"},
+	"paper_reviews":      {"id", "paper_id", "review_round"},
+	"paper_search_records": {"id", "paper_id", "query"},
 }
 
 // RunMigration 执行完整的数据库迁移
@@ -326,6 +342,35 @@ func (m *MigrationManager) createIndexes() error {
 			name: "idx_tool_call_records_input_hash",
 			query: `CREATE INDEX IF NOT EXISTS idx_tool_call_records_input_hash 
 				ON tool_call_records(input_hash)`,
+		},
+		// 论文会话索引
+		{
+			name: "idx_paper_sessions_user_status",
+			query: `CREATE INDEX IF NOT EXISTS idx_paper_sessions_user_status 
+				ON paper_sessions(user_id, status)`,
+		},
+		{
+			name: "idx_paper_sessions_user_created",
+			query: `CREATE INDEX IF NOT EXISTS idx_paper_sessions_user_created 
+				ON paper_sessions(user_id, created_at DESC)`,
+		},
+		// 论文章节索引
+		{
+			name: "idx_paper_chapters_paper_id",
+			query: `CREATE INDEX IF NOT EXISTS idx_paper_chapters_paper_id 
+				ON paper_chapters(paper_id, sort_order)`,
+		},
+		// 论文引用索引
+		{
+			name: "idx_paper_citations_paper_id",
+			query: `CREATE INDEX IF NOT EXISTS idx_paper_citations_paper_id 
+				ON paper_citations(paper_id)`,
+		},
+		// 论文审查索引
+		{
+			name: "idx_paper_reviews_paper_id",
+			query: `CREATE INDEX IF NOT EXISTS idx_paper_reviews_paper_id 
+				ON paper_reviews(paper_id, review_round)`,
 		},
 	}
 

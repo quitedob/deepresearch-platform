@@ -1,3 +1,5 @@
+// Deprecated: This package is superseded by github.com/ai-research-platform/internal/infrastructure/config.
+// All new code should import from infrastructure/config. This package will be removed in a future version.
 package config
 
 import (

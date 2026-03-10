@@ -38,6 +38,7 @@ type ReliabilityConfig struct {
 	Timeout          time.Duration // 单次调用超时
 	EnableDedup      bool          // 启用去重
 	DedupTTL         time.Duration // 去重缓存TTL
+	MaxDedupEntries  int           // 去重缓存最大条目数（防止内存无限增长）
 	RateLimitPerMin  int           // 每分钟限流
 	RecordCallback   func(*ToolCallRecord) // 记录回调（用于入库）
 }
@@ -51,17 +52,20 @@ func DefaultReliabilityConfig() ReliabilityConfig {
 		Timeout:         30 * time.Second,
 		EnableDedup:     true,
 		DedupTTL:        5 * time.Minute,
+		MaxDedupEntries: 10000, // 修复：默认最多10000条缓存
 		RateLimitPerMin: 30,
 	}
 }
 
 // ReliableTool 可靠性包装的工具
 type ReliableTool struct {
-	inner      tool.InvokableTool
-	config     ReliabilityConfig
-	dedupCache sync.Map // map[string]*dedupEntry
-	rateLimiter *rateLimiter
-	mu         sync.Mutex
+	inner        tool.InvokableTool
+	config       ReliabilityConfig
+	dedupCache   sync.Map // map[string]*dedupEntry
+	dedupCount   int64    // 当前缓存条目数（近似值）
+	rateLimiter  *rateLimiter
+	mu           sync.Mutex
+	cleanerOnce  sync.Once // 确保清理协程只启动一次
 }
 
 type dedupEntry struct {
@@ -103,11 +107,16 @@ func (r *rateLimiter) allow() bool {
 
 // NewReliableTool 创建可靠性包装的工具
 func NewReliableTool(inner tool.InvokableTool, config ReliabilityConfig) *ReliableTool {
-	return &ReliableTool{
+	if config.MaxDedupEntries <= 0 {
+		config.MaxDedupEntries = 10000
+	}
+	t := &ReliableTool{
 		inner:       inner,
 		config:      config,
 		rateLimiter: newRateLimiter(config.RateLimitPerMin),
 	}
+	// 启动后台清理协程（延迟到第一次调用时）
+	return t
 }
 
 // Info 返回工具信息
@@ -244,11 +253,61 @@ func (t *ReliableTool) checkDedup(inputHash string) string {
 }
 
 // cacheResult 缓存结果
+// 修复：添加容量检查，防止无限增长
 func (t *ReliableTool) cacheResult(inputHash, result string) {
+	// 启动后台清理协程（只执行一次）
+	t.cleanerOnce.Do(func() {
+		go t.startDedupCleaner()
+	})
+
+	// 检查容量，超出时先清理过期条目
+	if t.dedupCount >= int64(t.config.MaxDedupEntries) {
+		t.evictExpired()
+	}
+
+	// 如果清理后仍然超过容量，跳过缓存（降级，不阻塞）
+	if t.dedupCount >= int64(t.config.MaxDedupEntries) {
+		return
+	}
+
 	t.dedupCache.Store(inputHash, &dedupEntry{
 		result:    result,
 		timestamp: time.Now(),
 	})
+	t.mu.Lock()
+	t.dedupCount++
+	t.mu.Unlock()
+}
+
+// startDedupCleaner 后台定期清理过期缓存
+func (t *ReliableTool) startDedupCleaner() {
+	ticker := time.NewTicker(t.config.DedupTTL)
+	defer ticker.Stop()
+	for range ticker.C {
+		t.evictExpired()
+	}
+}
+
+// evictExpired 清理过期缓存条目
+func (t *ReliableTool) evictExpired() {
+	var evicted int64
+	now := time.Now()
+	t.dedupCache.Range(func(key, value interface{}) bool {
+		entry := value.(*dedupEntry)
+		if now.Sub(entry.timestamp) >= t.config.DedupTTL {
+			t.dedupCache.Delete(key)
+			evicted++
+		}
+		return true
+	})
+	if evicted > 0 {
+		t.mu.Lock()
+		t.dedupCount -= evicted
+		if t.dedupCount < 0 {
+			t.dedupCount = 0
+		}
+		t.mu.Unlock()
+	}
 }
 
 // recordCall 记录调用

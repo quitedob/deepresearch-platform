@@ -83,8 +83,14 @@ func NewParallelOrchestrator(chatModel model.ChatModel, tools []tool.InvokableTo
 }
 
 // RegisterCallback 注册进度回调
+// P0 修复：每次注册时重置回调列表，防止跨会话回调累积
 func (o *ParallelOrchestrator) RegisterCallback(callback ProgressCallback) {
-	o.callbacks = append(o.callbacks, callback)
+	o.callbacks = []ProgressCallback{callback}
+}
+
+// ClearCallbacks 清除所有回调（用于会话结束后释放资源）
+func (o *ParallelOrchestrator) ClearCallbacks() {
+	o.callbacks = nil
 }
 
 func (o *ParallelOrchestrator) emit(event *ProgressEvent) {
@@ -409,6 +415,13 @@ func (o *ParallelOrchestrator) runSubAgent(ctx context.Context, task SubAgentTas
 			result.Evidence = append(result.Evidence, searchResult)
 			toolsUsedSet[toolName] = true
 
+			// 主动调度 web_reader：从搜索结果中提取 URL 并深度读取
+			deepContents := o.deepReadURLs(ctx, searchResult, 1)
+			for _, dc := range deepContents {
+				result.Evidence = append(result.Evidence, dc)
+				toolsUsedSet["web_reader"] = true
+			}
+
 			result.Steps = append(result.Steps, Step{
 				StepNumber: stepNum,
 				Phase:      "searching",
@@ -419,6 +432,19 @@ func (o *ParallelOrchestrator) runSubAgent(ctx context.Context, task SubAgentTas
 				Timestamp:  time.Now(),
 			})
 			stepNum++
+
+			if len(deepContents) > 0 {
+				result.Steps = append(result.Steps, Step{
+					StepNumber: stepNum,
+					Phase:      "deep_reading",
+					Thought:    fmt.Sprintf("[%s] 深度读取 %d 个网页", task.Name, len(deepContents)),
+					Action:     "web_reader",
+					Observation: fmt.Sprintf("成功获取 %d 篇网页全文", len(deepContents)),
+					Quality:    0.9,
+					Timestamp:  time.Now(),
+				})
+				stepNum++
+			}
 
 			// 第一轮每个工具只用一次，避免重复
 			if round == 0 {
@@ -450,19 +476,66 @@ func (o *ParallelOrchestrator) findTool(ctx context.Context, name string) tool.I
 }
 
 // buildToolArgs 根据工具名称构建参数JSON
+// 修复：web_reader 需要 URL，不能直接把 query 当 URL 传入
 func buildToolArgs(toolName, query string) string {
 	escaped := strings.ReplaceAll(query, `"`, `\"`)
 	switch toolName {
 	case "web_search_prime":
 		return fmt.Sprintf(`{"search_query": "%s", "content_size": "medium"}`, escaped)
 	case "web_reader":
-		// web_reader 需要URL，这里不直接使用
-		return fmt.Sprintf(`{"url": "%s"}`, escaped)
+		// web_reader 需要 URL 参数，不能用搜索 query 直接当 URL
+		// 仅当输入看起来像 URL 时使用 web_reader，否则返回空 JSON 让调用方跳过
+		if strings.HasPrefix(query, "http://") || strings.HasPrefix(query, "https://") {
+			return fmt.Sprintf(`{"url": "%s"}`, escaped)
+		}
+		// 非 URL 输入，返回空参数让调用失败，由外层 fallback
+		return `{"url": ""}`
 	case "zread_repo":
 		return fmt.Sprintf(`{"operation": "search_doc", "repo_name": "%s", "query": "%s"}`, escaped, escaped)
 	default:
 		return fmt.Sprintf(`{"query": "%s"}`, escaped)
 	}
+}
+
+// deepReadURLs 从搜索结果中提取 URL 并使用 web_reader 深度读取
+func (o *ParallelOrchestrator) deepReadURLs(ctx context.Context, searchResult string, maxURLs int) []string {
+	wrTool := o.findTool(ctx, "web_reader")
+	if wrTool == nil {
+		return nil
+	}
+
+	urls := extractURLsFromText(searchResult)
+	if len(urls) == 0 {
+		return nil
+	}
+
+	if len(urls) > maxURLs {
+		urls = urls[:maxURLs]
+	}
+
+	var results []string
+	for _, u := range urls {
+		select {
+		case <-ctx.Done():
+			return results
+		default:
+		}
+
+		escaped := strings.ReplaceAll(u, `"`, `\"`)
+		args := fmt.Sprintf(`{"url": "%s"}`, escaped)
+
+		readCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		content, err := wrTool.InvokableRun(readCtx, args)
+		cancel()
+
+		if err == nil && content != "" && len(content) > 100 {
+			if len(content) > 5000 {
+				content = content[:5000] + "\n...[内容已截断]"
+			}
+			results = append(results, content)
+		}
+	}
+	return results
 }
 
 // quickSynthesis 快速综合证据
