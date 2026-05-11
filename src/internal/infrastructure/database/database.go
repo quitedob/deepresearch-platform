@@ -166,6 +166,14 @@ func AllModels() []interface{} {
 		&model.AIQuestionMessage{},
 		&model.AIGeneratedQuestion{},
 		&model.AIQuestionConfig{},
+		// 论文相关
+		&model.PaperSession{},
+		&model.PaperChapter{},
+		&model.PaperCitation{},
+		&model.PaperReview{},
+		&model.PaperSearchRecord{},
+		// 工具调用记录
+		&model.ToolCallRecord{},
 	}
 }
 
@@ -194,6 +202,12 @@ func RequiredTables() []string {
 		"ai_question_messages",
 		"ai_generated_questions",
 		"ai_question_configs",
+		"paper_sessions",
+		"paper_chapters",
+		"paper_citations",
+		"paper_reviews",
+		"paper_search_records",
+		"tool_call_records",
 	}
 }
 
@@ -217,6 +231,12 @@ var TableColumnRequirements = map[string][]string{
 	"provider_configs":   {"id", "provider", "is_enabled"},
 	"model_configs":      {"id", "provider", "model_name", "is_enabled"},
 	"quota_configs":      {"id", "membership_type", "chat_limit", "research_limit"},
+	"paper_sessions":     {"id", "user_id", "topic", "status"},
+	"paper_chapters":     {"id", "paper_id", "chapter_type", "content"},
+	"paper_citations":    {"id", "paper_id", "citation_type"},
+	"paper_reviews":      {"id", "paper_id", "review_round", "review_type"},
+	"paper_search_records": {"id", "paper_id", "query", "tool_name"},
+	"tool_call_records":  {"id", "research_id", "tool_name", "success"},
 }
 
 

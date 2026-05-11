@@ -14,14 +14,21 @@ import (
 
 // Config 应用配置
 type Config struct {
-    Server    ServerConfig    `mapstructure:"server"`
-    Database  DatabaseConfig  `mapstructure:"database"`
-    Redis     RedisConfig     `mapstructure:"redis"`
-    LLM       LLMConfig       `mapstructure:"llm"`
-    Research  ResearchConfig  `mapstructure:"research"`
-    Security  SecurityConfig  `mapstructure:"security"`
-    Logging   LoggingConfig   `mapstructure:"logging"`
-    Admin     AdminConfig     `mapstructure:"admin"`
+    Server           ServerConfig           `mapstructure:"server"`
+    Database         DatabaseConfig        `mapstructure:"database"`
+    Redis            RedisConfig           `mapstructure:"redis"`
+    LLM              LLMConfig             `mapstructure:"llm"`
+    Research         ResearchConfig        `mapstructure:"research"`
+    Security         SecurityConfig        `mapstructure:"security"`
+    Logging          LoggingConfig         `mapstructure:"logging"`
+    Admin            AdminConfig           `mapstructure:"admin"`
+    MiniMaxWebSearch MiniMaxWebSearchConfig `mapstructure:"minimax_web_search"`
+}
+
+// MiniMaxWebSearchConfig MiniMax 网络搜索配置
+type MiniMaxWebSearchConfig struct {
+    Enabled bool   `mapstructure:"enabled"`
+    APIKey  string `mapstructure:"api_key"`
 }
 
 // ServerConfig 服务器配置
@@ -183,6 +190,22 @@ func Load(configPath string) (*Config, error) {
             provider.APIKey = openrouterKey
             config.LLM.Providers["openrouter"] = provider
         }
+    }
+
+    if minimaxKey := os.Getenv("MINIMAX_API_KEY"); minimaxKey != "" && minimaxKey != "your_minimax_api_key_here" {
+        if provider, ok := config.LLM.Providers["minimax"]; ok {
+            provider.APIKey = minimaxKey
+            config.LLM.Providers["minimax"] = provider
+        }
+        // 同时更新 MiniMax WebSearch 配置
+        if config.MiniMaxWebSearch.APIKey == "" {
+            config.MiniMaxWebSearch.APIKey = minimaxKey
+        }
+    }
+
+    // MiniMax WebSearch 开关可通过环境变量覆盖
+    if envEnabled := os.Getenv("MINIMAX_WEB_SEARCH_ENABLED"); envEnabled != "" {
+        config.MiniMaxWebSearch.Enabled = envEnabled == "true" || envEnabled == "1"
     }
 
     // 从环境变量读取管理员配置

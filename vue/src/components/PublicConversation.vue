@@ -122,6 +122,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import markdownit from 'markdown-it';
+import toast from '@/utils/toast';
 
 const route = useRoute();
 const loading = ref(true);
@@ -246,7 +247,7 @@ const shareAgain = async () => {
     console.log('分享链接已复制到剪贴板');
   } catch (err) {
     console.error('复制失败:', err);
-    alert('复制失败，请手动复制链接');
+    toast.error('复制失败，请手动复制链接');
   }
 };
 

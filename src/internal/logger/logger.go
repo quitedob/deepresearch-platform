@@ -8,10 +8,13 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	infraLogger "github.com/ai-research-platform/internal/infrastructure/logger"
 )
 
 var (
 	// Log is the global logger instance
+	// 优先使用内部logger，fallback到infrastructure logger
 	Log *zap.Logger
 
 	// Sensitive field patterns for redaction
@@ -40,6 +43,14 @@ var (
 		"authorization": true,
 	}
 )
+
+// getLogger returns Log, falling back to infrastructure logger if nil
+func getLogger() *zap.Logger {
+	if Log != nil {
+		return Log
+	}
+	return infraLogger.GetLogger()
+}
 
 // Config holds logger configuration
 type Config struct {
@@ -97,37 +108,37 @@ func Initialize(cfg Config) error {
 
 // Info logs an info message
 func Info(msg string, fields ...zap.Field) {
-	Log.Info(msg, fields...)
+	getLogger().Info(msg, fields...)
 }
 
 // Debug logs a debug message
 func Debug(msg string, fields ...zap.Field) {
-	Log.Debug(msg, fields...)
+	getLogger().Debug(msg, fields...)
 }
 
 // Warn logs a warning message
 func Warn(msg string, fields ...zap.Field) {
-	Log.Warn(msg, fields...)
+	getLogger().Warn(msg, fields...)
 }
 
 // Error logs an error message
 func Error(msg string, fields ...zap.Field) {
-	Log.Error(msg, fields...)
+	getLogger().Error(msg, fields...)
 }
 
 // Fatal logs a fatal message and exits
 func Fatal(msg string, fields ...zap.Field) {
-	Log.Fatal(msg, fields...)
+	getLogger().Fatal(msg, fields...)
 }
 
 // With creates a child logger with additional fields
 func With(fields ...zap.Field) *zap.Logger {
-	return Log.With(fields...)
+	return getLogger().With(fields...)
 }
 
 // Sync flushes any buffered log entries
 func Sync() error {
-	return Log.Sync()
+	return getLogger().Sync()
 }
 
 // RedactSensitiveData redacts sensitive information from a string
@@ -174,12 +185,12 @@ func SafeString(key, value string) zap.Field {
 // ErrorWithStack logs an error with stack trace
 func ErrorWithStack(msg string, err error, fields ...zap.Field) {
 	allFields := append(fields, zap.Error(err), zap.Stack("stack"))
-	Log.Error(msg, allFields...)
+	getLogger().Error(msg, allFields...)
 }
 
 // CriticalError logs a critical error that requires immediate attention
 func CriticalError(msg string, err error, fields ...zap.Field) {
 	allFields := append(fields, zap.Error(err), zap.Stack("stack"), zap.Bool("critical", true))
-	Log.Error(msg, allFields...)
+	getLogger().Error(msg, allFields...)
 	// In production, this would trigger alerts to monitoring systems
 }

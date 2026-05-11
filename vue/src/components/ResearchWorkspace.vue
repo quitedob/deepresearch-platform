@@ -45,10 +45,8 @@
               <label>研究类型</label>
               <select v-model="researchType" class="form-select">
                 <option value="comprehensive">综合研究</option>
-                <option value="academic">学术研究</option>
-                <option value="market">市场分析</option>
-                <option value="technical">技术分析</option>
-                <option value="creative">创意研究</option>
+                <option value="quick">快速研究</option>
+                <option value="deep">深度研究</option>
               </select>
             </div>
 
@@ -252,8 +250,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ragAPI } from '@/services/api'
+import { researchAPI } from '@/api/index'
 import { formatRelativeTime } from '@/utils/timeFormat'
+import toast from '@/utils/toast'
 
 // 响应式数据
 const researchQuery = ref('')
@@ -323,13 +322,13 @@ const startResearch = async () => {
 
   try {
     // 使用实际 API 启动研究
-    const response = await ragAPI.startResearch({
+    const response = await researchAPI.startResearch({
       query: researchQuery.value,
       research_type: researchType.value,
-      depth: researchDepth.value,
-      sources: Object.entries(dataSources.value)
-        .filter(([, enabled]) => enabled)
-        .map(([key]) => key)
+      llm_config: {
+        provider: localStorage.getItem('defaultProvider') || undefined,
+        model: localStorage.getItem('defaultModel') || undefined
+      }
     })
 
     if (response && response.success) {
@@ -347,7 +346,7 @@ const startResearch = async () => {
           await sleep(2000)
 
           try {
-            const result = await ragAPI.getResearchResult(sessionId)
+            const result = await researchAPI.getResearchStatus(sessionId)
             if (result && result.status === 'completed') {
               researchResults.value = {
                 summary: result.report_text || '研究完成',
@@ -385,7 +384,7 @@ const startResearch = async () => {
   } catch (error) {
     researchStatus.value = 'error'
     console.error('研究失败:', error)
-    alert(`研究失败: ${error.message}`)
+    toast.error(`研究失败: ${error.message}`)
   } finally {
     isResearching.value = false
   }
@@ -403,7 +402,7 @@ const createNewResearch = () => {
 const loadResearchList = async () => {
   loading.value = true
   try {
-    const response = await ragAPI.getResearchHistory()
+    const response = await researchAPI.getResearchSessions()
     if (response && response.data) {
       researchHistory.value = response.data.map(item => ({
         ...item,
@@ -428,7 +427,7 @@ const saveTemplate = () => {
 
   // 这里应该调用API保存模板
   console.log('保存模板:', template)
-  alert('模板已保存')
+  toast.success('模板已保存')
 }
 
 const exportResults = () => {
@@ -468,7 +467,7 @@ const exportResults = () => {
 const shareResults = () => {
   // 这里应该实现分享功能
   console.log('分享研究结果')
-  alert('分享功能开发中')
+  toast.info('分享功能开发中')
 }
 
 const selectHistoryItem = (item) => {

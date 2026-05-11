@@ -63,6 +63,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
 import { aiQuestionAPI } from '@/api/index';
+import toast from '@/utils/toast';
 
 const emit = defineEmits(['select-session', 'new-session']);
 
@@ -123,7 +124,7 @@ const deleteSession = async (id) => {
     }
   } catch (error) {
     console.error('删除失败:', error);
-    alert('删除失败，请重试');
+    toast.error('删除失败，请重试');
   }
 };
 
@@ -140,7 +141,7 @@ const clearHistory = async () => {
     startNewSession();
   } catch (error) {
     console.error('清空失败:', error);
-    alert('清空失败，请重试');
+    toast.error('清空失败，请重试');
   }
 };
 

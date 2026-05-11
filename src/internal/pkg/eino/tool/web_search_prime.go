@@ -85,6 +85,7 @@ func (t *WebSearchPrimeTool) InvokableRun(ctx context.Context, argumentsInJSON s
 	// 构建参数
 	arguments := map[string]interface{}{
 		"search_query": args.SearchQuery,
+		"location":     "cn", // 默认中国区域，提高中文搜索质量
 	}
 	if args.SearchRecencyFilter != "" {
 		arguments["search_recency_filter"] = args.SearchRecencyFilter

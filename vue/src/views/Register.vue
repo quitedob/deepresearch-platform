@@ -16,7 +16,7 @@
             id="username"
             autocomplete="username"
             required
-            placeholder="请输入账号"
+            placeholder="请输入账号（3-50位字母或数字）"
             @blur="touched.username = true"
             :class="{ invalid: usernameError && touched.username }"
           />
@@ -30,7 +30,7 @@
             id="password"
             autocomplete="new-password"
             required
-            placeholder="请输入密码"
+            placeholder="请输入密码（至少6位）"
             @blur="touched.password = true"
             :class="{ invalid: passwordError && touched.password }"
           />
@@ -39,15 +39,16 @@
 
         <div class="input-group">
           <input
-            v-model.trim="phone"
-            type="tel"
-            id="phone"
-            autocomplete="tel"
-            placeholder="请输入手机号(可选)"
-            @blur="touched.phone = true"
-            :class="{ invalid: phoneError && touched.phone }"
+            v-model.trim="confirmPassword"
+            type="password"
+            id="confirmPassword"
+            autocomplete="new-password"
+            required
+            placeholder="请再次输入密码"
+            @blur="touched.confirmPassword = true"
+            :class="{ invalid: confirmPasswordError && touched.confirmPassword }"
           />
-          <p v-if="phoneError && touched.phone" class="error">{{ phoneError }}</p>
+          <p v-if="confirmPasswordError && touched.confirmPassword" class="error">{{ confirmPasswordError }}</p>
         </div>
 
         <div class="input-group">
@@ -82,11 +83,12 @@
 import { ref, computed, onMounted, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { register } from '@/api/user.js';
+import toast from '@/utils/toast';
 
 const router = useRouter();
 const username = ref('');
 const password = ref('');
-const phone = ref('');
+const confirmPassword = ref('');
 const email = ref('');
 const submitting = ref(false);
 const rememberMe = ref(true);
@@ -94,28 +96,31 @@ const rememberMe = ref(true);
 const touched = reactive({
   username: false,
   password: false,
-  phone: false,
+  confirmPassword: false,
   email: false,
 });
 
-const alnum20 = /^[A-Za-z0-9]{1,20}$/;
-const phoneRe = /^(\+?\d{6,20})$/;
+const alnum50 = /^[A-Za-z0-9]{3,50}$/;
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const usernameError = computed(() => {
   if (!username.value) return '请输入账号';
-  if (!alnum20.test(username.value)) return '账号仅限字母与数字，长度1-20';
+  if (username.value.length < 3) return '账号至少3个字符';
+  if (username.value.length > 50) return '账号最多50个字符';
+  if (!alnum50.test(username.value)) return '账号仅限字母与数字';
   return '';
 });
 
 const passwordError = computed(() => {
   if (!password.value) return '请输入密码';
-  if (!alnum20.test(password.value)) return '密码仅限字母与数字，长度1-20';
+  if (password.value.length < 6) return '密码至少6个字符';
+  if (password.value.length > 100) return '密码最多100个字符';
   return '';
 });
 
-const phoneError = computed(() => {
-  if (phone.value && !phoneRe.test(phone.value)) return '手机号格式不正确';
+const confirmPasswordError = computed(() => {
+  if (!confirmPassword.value) return '请再次输入密码';
+  if (confirmPassword.value !== password.value) return '两次密码不一致';
   return '';
 });
 
@@ -128,7 +133,7 @@ const emailError = computed(() => {
 const doRegister = async () => {
   Object.keys(touched).forEach(key => touched[key] = true);
 
-  if (usernameError.value || passwordError.value || phoneError.value || emailError.value) return;
+  if (usernameError.value || passwordError.value || confirmPasswordError.value || emailError.value) return;
 
   try {
     submitting.value = true;
@@ -137,12 +142,6 @@ const doRegister = async () => {
       email: email.value,
       rememberMe: rememberMe.value
     });
-
-    // 验证邮箱必填
-    if (!email.value) {
-      alert('请输入邮箱地址');
-      return;
-    }
 
     const userData = {
       username: username.value,
@@ -158,6 +157,9 @@ const doRegister = async () => {
 
     const storage = rememberMe.value ? localStorage : sessionStorage;
     storage.setItem('auth_token', data.access_token);
+    if (data.refresh_token) {
+      storage.setItem('refresh_token', data.refresh_token);
+    }
     storage.setItem('user', JSON.stringify(data.user));
     // 注册成功即视为完成欢迎流程，防止路由守卫死循环
     localStorage.setItem('welcome_completed', 'true');
@@ -168,7 +170,7 @@ const doRegister = async () => {
     router.push(String(redirect));
   } catch (e) {
     console.error('[Register] 注册失败', e);
-    alert(e.message || '注册失败');
+    toast.error(e.message || '注册失败');
   } finally {
     submitting.value = false;
   }

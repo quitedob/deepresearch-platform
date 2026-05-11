@@ -288,6 +288,10 @@ func (c *MCPClient) parseSSEResponse(body io.Reader) (string, error) {
 			if result, ok := eventData["result"].(map[string]interface{}); ok {
 				extracted := false
 
+				// 调试：打印完整的 result 结构
+				resultJSON, _ := json.Marshal(result)
+				log.Printf("[DEBUG] MCP SSE result: %s", truncateString(string(resultJSON), 1000))
+
 				// 格式1: content 是数组 [{"type": "text", "text": "..."}]
 				if content, ok := result["content"].([]interface{}); ok {
 					for _, item := range content {

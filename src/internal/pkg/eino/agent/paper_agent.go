@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/components/model"
@@ -115,12 +116,16 @@ type ReviewResult struct {
 }
 
 // PaperAgent 论文生成Agent
+// 并发安全：使用 sync.Map 按会话ID隔离回调和配置，支持多用户同时生成
 type PaperAgent struct {
 	chatModel   model.ChatModel
 	tools       []tool.InvokableTool
-	config      PaperAgentConfig
+	config      PaperAgentConfig // 只读基础配置，不在运行时修改
 	templateMgr *paper.TemplateManager
-	callbacks   []PaperProgressCallback
+	// sessionCallbacks: sessionID -> PaperProgressCallback，替代全局 callbacks slice
+	sessionCallbacks sync.Map
+	// sessionConfigs: sessionID -> PaperAgentConfig，每个会话独立配置
+	sessionConfigs sync.Map
 }
 
 // NewPaperAgent 创建论文生成Agent
@@ -146,45 +151,106 @@ func NewPaperAgent(chatModel model.ChatModel, tools []tool.InvokableTool, config
 		tools:       tools,
 		config:      config,
 		templateMgr: paper.NewTemplateManager(),
-		callbacks:   make([]PaperProgressCallback, 0),
 	}
 }
 
-// RegisterCallback 注册进度回调（替换而非追加，防止跨会话回调累积）
+// RegisterSessionCallback 注册会话级别的进度回调（并发安全）
+func (a *PaperAgent) RegisterSessionCallback(sessionID string, callback PaperProgressCallback) {
+	a.sessionCallbacks.Store(sessionID, callback)
+}
+
+// ClearSessionCallback 清除会话回调
+func (a *PaperAgent) ClearSessionCallback(sessionID string) {
+	a.sessionCallbacks.Delete(sessionID)
+	a.sessionConfigs.Delete(sessionID)
+}
+
+// SetSessionConfig 为特定会话设置配置（并发安全，不影响其他会话）
+func (a *PaperAgent) SetSessionConfig(sessionID string, citationStyle string, maxReviewRounds int) {
+	cfg := a.config // 复制基础配置
+	if citationStyle != "" {
+		cfg.CitationStyle = citationStyle
+	}
+	if maxReviewRounds > 0 {
+		cfg.MaxReviewRounds = maxReviewRounds
+	}
+	a.sessionConfigs.Store(sessionID, cfg)
+}
+
+// getSessionConfig 获取会话配置，不存在则返回基础配置
+func (a *PaperAgent) getSessionConfig(sessionID string) PaperAgentConfig {
+	if cfg, ok := a.sessionConfigs.Load(sessionID); ok {
+		return cfg.(PaperAgentConfig)
+	}
+	return a.config
+}
+
+// RegisterCallback 兼容旧接口（不推荐，无法区分会话）
+// Deprecated: 使用 RegisterSessionCallback 代替
 func (a *PaperAgent) RegisterCallback(callback PaperProgressCallback) {
-	a.callbacks = []PaperProgressCallback{callback}
+	a.sessionCallbacks.Store("__legacy__", callback)
 }
 
-// ClearCallbacks 清除所有回调（防止跨会话累积）
+// ClearCallbacks 兼容旧接口
+// Deprecated: 使用 ClearSessionCallback 代替
 func (a *PaperAgent) ClearCallbacks() {
-	a.callbacks = nil
+	a.sessionCallbacks.Delete("__legacy__")
 }
 
-// SetCitationStyle 设置引用格式
+// SetCitationStyle 兼容旧接口（修改基础配置，不影响正在运行的会话）
 func (a *PaperAgent) SetCitationStyle(style string) {
 	a.config.CitationStyle = style
 }
 
-// SetMaxReviewRounds 设置最大审查轮数
+// SetMaxReviewRounds 兼容旧接口
 func (a *PaperAgent) SetMaxReviewRounds(rounds int) {
 	if rounds > 0 {
 		a.config.MaxReviewRounds = rounds
 	}
 }
 
-// emitProgress 发送进度事件
-func (a *PaperAgent) emitProgress(event *PaperProgressEvent) {
+// emitSessionProgress 发送会话级别的进度事件（并发安全）
+func (a *PaperAgent) emitSessionProgress(sessionID string, event *PaperProgressEvent) {
 	event.Timestamp = time.Now()
-	for _, cb := range a.callbacks {
-		cb(event)
+	if cb, ok := a.sessionCallbacks.Load(sessionID); ok {
+		cb.(PaperProgressCallback)(event)
 	}
 }
 
-// Run 执行论文生成
+// emitProgress 兼容旧接口（发送给 __legacy__ 回调）
+func (a *PaperAgent) emitProgress(event *PaperProgressEvent) {
+	event.Timestamp = time.Now()
+	if cb, ok := a.sessionCallbacks.Load("__legacy__"); ok {
+		cb.(PaperProgressCallback)(event)
+	}
+}
+
+// RunWithSession 执行论文生成（会话级别，并发安全）
+// 使用 sessionID 隔离回调和配置，支持多用户同时生成
+func (a *PaperAgent) RunWithSession(ctx context.Context, sessionID, title, topic, inputContent, paperType string, targetWords int) (*PaperResult, error) {
+	cfg := a.getSessionConfig(sessionID)
+
+	// 临时替换 emitProgress 为会话级别的发送
+	emit := func(event *PaperProgressEvent) {
+		a.emitSessionProgress(sessionID, event)
+	}
+
+	return a.runWithConfig(ctx, cfg, emit, title, topic, inputContent, paperType, targetWords)
+}
+
+// Run 执行论文生成（兼容旧接口，使用 __legacy__ 回调）
 func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperType string, targetWords int) (*PaperResult, error) {
+	emit := func(event *PaperProgressEvent) {
+		a.emitProgress(event)
+	}
+	return a.runWithConfig(ctx, a.config, emit, title, topic, inputContent, paperType, targetWords)
+}
+
+// runWithConfig 内部实现，接受配置和 emit 函数
+func (a *PaperAgent) runWithConfig(ctx context.Context, cfg PaperAgentConfig, emit func(*PaperProgressEvent), title, topic, inputContent, paperType string, targetWords int) (*PaperResult, error) {
 	startTime := time.Now()
 
-	ctx, cancel := context.WithTimeout(ctx, a.config.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	result := &PaperResult{
@@ -192,7 +258,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 	}
 
 	// Phase 1: Planning (0% - 5%)
-	a.emitProgress(&PaperProgressEvent{
+	emit(&PaperProgressEvent{
 		Stage:    "planning",
 		Progress: 0.01,
 		Message:  "正在分析主题，规划论文结构...",
@@ -208,7 +274,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 		return nil, fmt.Errorf("生成大纲失败: %w", err)
 	}
 
-	a.emitProgress(&PaperProgressEvent{
+	emit(&PaperProgressEvent{
 		Stage:    "planning",
 		Progress: 0.05,
 		Message:  "论文大纲规划完成",
@@ -217,8 +283,8 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 
 	// Phase 2: Search Enhancement (5% - 15%)
 	var searchResults map[string][]SearchResult
-	if a.config.EnableSearchEnhance {
-		a.emitProgress(&PaperProgressEvent{
+	if cfg.EnableSearchEnhance {
+		emit(&PaperProgressEvent{
 			Stage:    "searching",
 			Progress: 0.06,
 			Message:  "正在搜索相关学术资料...",
@@ -226,7 +292,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 
 		searchResults = a.searchForAllChapters(ctx, title, topic, chapters)
 
-		a.emitProgress(&PaperProgressEvent{
+		emit(&PaperProgressEvent{
 			Stage:    "searching",
 			Progress: 0.15,
 			Message:  fmt.Sprintf("搜索完成，收集到 %d 类资料", len(searchResults)),
@@ -246,7 +312,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 		}
 
 		progress := chapterProgressBase + chapterProgressStep*float32(i)
-		a.emitProgress(&PaperProgressEvent{
+		emit(&PaperProgressEvent{
 			Stage:        "generating",
 			Progress:     progress,
 			Message:      fmt.Sprintf("正在生成：%s", ch.Title),
@@ -276,7 +342,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 		chapterResults = append(chapterResults, chapterResult)
 		allCitations = append(allCitations, citations...)
 
-		a.emitProgress(&PaperProgressEvent{
+		emit(&PaperProgressEvent{
 			Stage:        "generating",
 			Progress:     progress + chapterProgressStep*0.8,
 			Message:      fmt.Sprintf("%s 生成完成（%d字）", ch.Title, wordCount),
@@ -288,8 +354,8 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 
 	// Phase 4: Review (65% - 85%)
 	reviewRounds := 0
-	for round := 1; round <= a.config.MaxReviewRounds; round++ {
-		a.emitProgress(&PaperProgressEvent{
+	for round := 1; round <= cfg.MaxReviewRounds; round++ {
+		emit(&PaperProgressEvent{
 			Stage:        "reviewing",
 			Progress:     0.65 + float32(round-1)*0.06,
 			Message:      fmt.Sprintf("第%d轮审查中...", round),
@@ -300,7 +366,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 		reviewRounds = round
 
 		if review.Passed {
-			a.emitProgress(&PaperProgressEvent{
+			emit(&PaperProgressEvent{
 				Stage:    "reviewing",
 				Progress: 0.85,
 				Message:  fmt.Sprintf("第%d轮审查通过！当前 %d 字", round, totalWords),
@@ -309,7 +375,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 		}
 
 		// Phase 5: Revise
-		a.emitProgress(&PaperProgressEvent{
+		emit(&PaperProgressEvent{
 			Stage:    "revising",
 			Progress: 0.65 + float32(round)*0.06,
 			Message:  fmt.Sprintf("第%d轮修订中...（不足 %d 字）", round, review.WordsShortfall),
@@ -317,7 +383,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 
 		chapterResults, allCitations, totalWords = a.reviseChapters(ctx, title, topic, inputContent, paperType, chapters, chapterResults, allCitations, review, searchResults)
 
-		a.emitProgress(&PaperProgressEvent{
+		emit(&PaperProgressEvent{
 			Stage:        "revising",
 			Progress:     0.65 + float32(round)*0.06 + 0.04,
 			Message:      fmt.Sprintf("第%d轮修订完成，当前 %d 字", round, totalWords),
@@ -326,7 +392,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 	}
 
 	// Phase 6: Synthesis (85% - 100%)
-	a.emitProgress(&PaperProgressEvent{
+	emit(&PaperProgressEvent{
 		Stage:    "synthesis",
 		Progress: 0.90,
 		Message:  "正在合并生成最终论文...",
@@ -353,7 +419,7 @@ func (a *PaperAgent) Run(ctx context.Context, title, topic, inputContent, paperT
 	result.ReviewRounds = reviewRounds
 	result.ExecutionTime = time.Since(startTime).Milliseconds()
 
-	a.emitProgress(&PaperProgressEvent{
+	emit(&PaperProgressEvent{
 		Stage:        "completed",
 		Progress:     1.0,
 		Message:      fmt.Sprintf("论文生成完成！共 %d 字，%d 条引用，%d 轮审查", totalWords, len(allCitations), reviewRounds),

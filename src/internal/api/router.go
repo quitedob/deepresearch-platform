@@ -1,6 +1,8 @@
 ﻿package api
 
 import (
+    "time"
+
     "github.com/gin-gonic/gin"
     "github.com/ai-research-platform/internal/api/v1"
     "github.com/ai-research-platform/internal/middleware"
@@ -20,6 +22,8 @@ type RouterEnhanced struct {
     notificationAPI *v1.NotificationAPI
     aiQuestionAPI   *v1.AIQuestionAPI
     paperAPI        *v1.PaperAPI
+    // P0 修复：注入管理员检查器，用于 AdminAuth 中间件的数据库级 is_admin 验证
+    adminChecker    middleware.UserAdminChecker
 }
 
 // NewRouterEnhanced 创建增强的路由器
@@ -91,6 +95,12 @@ func NewRouterEnhancedFull(
     if len(paperAPI) > 0 && paperAPI[0] != nil {
         r.paperAPI = paperAPI[0]
     }
+    return r
+}
+
+// SetAdminChecker 注入管理员检查器（P0 修复：启用中间件层 is_admin 数据库验证）
+func (r *RouterEnhanced) SetAdminChecker(checker middleware.UserAdminChecker) *RouterEnhanced {
+    r.adminChecker = checker
     return r
 }
 
@@ -176,6 +186,7 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
             authorizedChat.DELETE("/sessions/:id", r.chatAPI.DeleteSession)
             authorizedChat.GET("/sessions/:id/messages", r.chatAPI.GetMessages)
             authorizedChat.DELETE("/sessions/:id/messages", r.chatAPI.ClearMessages)
+            authorizedChat.POST("/sessions/batch-delete", r.chatAPI.BatchDeleteSessions)
             authorizedChat.POST("/chat", r.chatAPI.Chat)
             authorizedChat.POST("/chat/stream", r.chatAPI.ChatStream)
             authorizedChat.POST("/chat/web-search", r.chatAPI.ChatWebSearch)
@@ -229,7 +240,7 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
         // 管理员路由
         if r.adminAPI != nil {
             adminGroup := v1Group.Group("/admin")
-            adminGroup.Use(middleware.Auth())
+            adminGroup.Use(middleware.AdminAuth(r.adminChecker))
             {
                 // 统计信息
                 adminGroup.GET("/stats", r.adminAPI.GetAdminStats)
@@ -279,6 +290,7 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
                 adminGroup.PUT("/users/batch-status", r.adminAPI.BatchUpdateUserStatus)
                 adminGroup.POST("/users/batch-reset-quota", r.adminAPI.BatchResetUserQuotas)
                 adminGroup.DELETE("/users/batch", r.adminAPI.BatchDeleteUsers)
+                adminGroup.DELETE("/users/:id", r.adminAPI.DeleteUser)
             }
         }
 
@@ -302,10 +314,10 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
                 aiGroup.GET("/question-config", r.aiQuestionAPI.GetAIQuestionConfig)
             }
             
-            // 管理员AI出题配置
+            // 管理员AI出题配置 - P0 修复：改用 AdminAuth() 而非 Auth()
             if r.adminAPI != nil {
                 adminAIGroup := v1Group.Group("/admin/ai")
-                adminAIGroup.Use(middleware.Auth())
+                adminAIGroup.Use(middleware.AdminAuth(r.adminChecker))
                 {
                     adminAIGroup.PUT("/question-config", r.aiQuestionAPI.UpdateAIQuestionConfig)
                 }
@@ -329,9 +341,11 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
                 paperGroup.GET("/status/:id", r.paperAPI.GetPaperStatus)
                 paperGroup.GET("/result/:id", r.paperAPI.GetPaperResult)
                 paperGroup.GET("/export/:id", r.paperAPI.ExportPaper)
+                paperGroup.GET("/preview/:id", r.paperAPI.PreviewPaper)
                 paperGroup.GET("/list", r.paperAPI.ListPapers)
                 paperGroup.DELETE("/:id", r.paperAPI.DeletePaper)
                 paperGroup.POST("/regenerate", r.paperAPI.RegenerateChapter)
+                paperGroup.PATCH("/chapter/:id", r.paperAPI.UpdateChapter)
                 // SSE 流端点也需要认证
                 paperGroup.GET("/stream/:id", r.paperAPI.StreamProgress)
             }
@@ -343,6 +357,6 @@ func (r *RouterEnhanced) SetupEnhanced() *gin.Engine {
 
 // SetupJWTAuthMiddleware 设置JWT认证中间件
 func SetupJWTAuthMiddleware(jwtSecret string, expiration int64) gin.HandlerFunc {
-    jwtManager := auth.NewJWTManager(jwtSecret, 0)
+    jwtManager := auth.NewJWTManager(jwtSecret, time.Duration(expiration))
     return middleware.AuthWithJWT(jwtManager)
 }

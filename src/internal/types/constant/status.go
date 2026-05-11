@@ -58,6 +58,7 @@ const (
 	ProviderOpenAI     = "openai"
 	ProviderOllama     = "ollama"
 	ProviderOpenRouter = "openrouter"
+	ProviderMiniMax    = "minimax"
 )
 
 // 消息角色

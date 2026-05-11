@@ -74,6 +74,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useChatStore } from '@/store';
 import { chatAPI } from '@/api/index';
 import { CONTEXT_REFRESH_INTERVAL } from '@/utils/config';
+import toast from '@/utils/toast';
 
 const props = defineProps({
   sessionId: String,
@@ -169,7 +170,7 @@ const confirmSummarize = async () => {
       
       showLimitWarning.value = false;
       const summaryPreview = result.summary ? result.summary.substring(0, 200) + '...' : '无';
-      alert(`已创建新对话！\n\n上一对话总结：\n${summaryPreview}`);
+      toast.success('已创建新对话，上一对话总结已保存。');
     }
   } catch (error) {
     console.error('总结并新建会话失败:', error);
@@ -178,7 +179,7 @@ const confirmSummarize = async () => {
     if (error.response?.data?.error) {
       errorMessage = error.response.data.error.message || errorMessage;
     }
-    alert(errorMessage);
+    toast.error(errorMessage);
   } finally {
     summarizing.value = false;
   }

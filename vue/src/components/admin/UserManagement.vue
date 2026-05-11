@@ -186,6 +186,7 @@ import {
   batchUpdateUserStatus,
   batchResetUserQuotas
 } from '@/api/admin'
+import toast from '@/utils/toast'
 
 const users = ref([])
 const total = ref(0)
@@ -215,12 +216,13 @@ const totalPages = computed(() => Math.ceil(total.value / limit.value))
 
 const loadUsers = async () => {
   try {
-    const response = await listUsers(limit.value, offset.value)
+    const response = await listUsers(limit.value, offset.value, searchQuery.value)
     const data = response.data || response
     users.value = data.users || []
     total.value = data.total || 0
   } catch (error) {
     console.error('加载用户列表失败:', error)
+    toast.error('加载用户列表失败')
   }
 }
 
@@ -291,14 +293,14 @@ const saveUser = async () => {
     loadUsers()
   } catch (error) {
     console.error('保存用户失败:', error)
-    alert('保存失败')
+    toast.error('保存失败')
   }
 }
 
 const resetQuota = async () => {
   try {
     await resetUserQuota(editingUser.value.id)
-    alert('配额已重置')
+    toast.success('配额已重置')
     loadUsers()
   } catch (error) {
     console.error('重置配额失败:', error)
@@ -345,13 +347,13 @@ const batchResetQuota = async () => {
   
   try {
     await batchResetUserQuotas(selectedUsers.value)
-    alert('批量重置配额成功')
+    toast.success('批量重置配额成功')
     selectedUsers.value = []
     selectAll.value = false
     loadUsers()
   } catch (error) {
     console.error('批量重置配额失败:', error)
-    alert('批量重置配额失败')
+    toast.error('批量重置配额失败')
   }
 }
 
@@ -360,13 +362,13 @@ const batchBanUsers = async () => {
   
   try {
     await batchUpdateUserStatus(selectedUsers.value, 'banned')
-    alert('批量禁用成功')
+    toast.success('批量禁用成功')
     selectedUsers.value = []
     selectAll.value = false
     loadUsers()
   } catch (error) {
     console.error('批量禁用失败:', error)
-    alert('批量禁用失败')
+    toast.error('批量禁用失败')
   }
 }
 
@@ -375,13 +377,13 @@ const batchActivateUsers = async () => {
   
   try {
     await batchUpdateUserStatus(selectedUsers.value, 'active')
-    alert('批量启用成功')
+    toast.success('批量启用成功')
     selectedUsers.value = []
     selectAll.value = false
     loadUsers()
   } catch (error) {
     console.error('批量启用失败:', error)
-    alert('批量启用失败')
+    toast.error('批量启用失败')
   }
 }
 
@@ -410,7 +412,7 @@ const executeDeleteUser = async () => {
   
   // 验证确认文本
   if (deleteConfirmText.value !== userToDelete.value.username) {
-    alert('请输入正确的用户名以确认删除')
+    toast.warning('请输入正确的用户名以确认删除')
     return
   }
   
@@ -425,14 +427,14 @@ const executeDeleteUser = async () => {
       }
     })
     
-    alert(`用户 "${userToDelete.value.username}" 已被删除（软删除，可恢复）`)
+    toast.success(`用户 "${userToDelete.value.username}" 已被删除（软删除，可恢复）`)
     showDeleteConfirmModal.value = false
     userToDelete.value = null
     deleteConfirmText.value = ''
     loadUsers()
   } catch (error) {
     console.error('删除用户失败:', error)
-    alert(`删除失败: ${error.message}`)
+    toast.error(`删除失败: ${error.message}`)
   } finally {
     isDeleting.value = false
   }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -71,7 +72,7 @@ func createZhipuModelWithJWT(apiKey, baseURL, modelName string) (model.ChatModel
 	// 使用临时token初始化（实际token会在每次请求时动态生成）
 	tempToken := generateZhipuToken(apiKey)
 	if tempToken == "" {
-		return nil, nil
+		return nil, fmt.Errorf("智谱AI API Key格式不正确（需要形如 'id.secret' 的格式），模型 %s 注册失败", modelName)
 	}
 	
 	config := &openai.ChatModelConfig{

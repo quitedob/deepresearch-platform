@@ -3,7 +3,7 @@ package request
 // CreateChatSessionRequest 创建聊天会话请求
 type CreateChatSessionRequest struct {
     Title        string `json:"title,omitempty" binding:"max=200"`
-    LLMProvider  string `json:"llm_provider" binding:"required,oneof=deepseek zhipu ollama openai openrouter"`
+    LLMProvider  string `json:"llm_provider" binding:"required,oneof=deepseek zhipu ollama openai openrouter minimax"`
     ModelName    string `json:"model_name" binding:"required"`
     ModelType    string `json:"model_type,omitempty" binding:"omitempty,oneof=default deep research"` // 模型类型：default, deep, research
     SystemPrompt string `json:"system_prompt,omitempty" binding:"max=5000"`
@@ -13,15 +13,17 @@ type CreateChatSessionRequest struct {
 type UpdateChatSessionRequest struct {
     Title        *string `json:"title,omitempty" binding:"omitempty,max=200"`
     SystemPrompt *string `json:"system_prompt,omitempty" binding:"omitempty,max=5000"`
+    IsPinned     *bool   `json:"is_pinned,omitempty"`
 }
 
 // ChatRequest 聊天请求
 type ChatRequest struct {
     SessionID     string `json:"session_id" binding:"required,uuid"`
     Message       string `json:"message" binding:"required,min=1,max=10000"`
-    Stream        bool   `json:"stream"`        // 是否使用流式输出
-    UseWebSearch  bool   `json:"use_web_search"` // 是否使用网络搜索
-    UseDeepThink  bool   `json:"use_deep_think"` // 是否使用深度思考
+    Stream        bool   `json:"stream"`         // 是否使用流式输出
+    UseWebSearch  bool   `json:"use_web_search"`  // 是否使用网络搜索
+    UseDeepThink  bool   `json:"use_deep_think"`  // 是否使用深度思考
+    ModelOverride string `json:"model,omitempty"` // 可选：覆盖会话的默认模型
 }
 
 // GetChatSessionsRequest 获取聊天会话列表请求

@@ -17,6 +17,7 @@ type ChatSession struct {
     ModelType    string         `gorm:"default:'default'" json:"model_type"` // default, deep, research
     SystemPrompt string         `gorm:"type:text" json:"system_prompt"`
     MessageCount int            `gorm:"default:0" json:"message_count"`
+    IsPinned     bool           `gorm:"default:false" json:"is_pinned"`
     Metadata     datatypes.JSON `gorm:"type:jsonb" json:"metadata"`
     Version      int            `gorm:"default:1" json:"version"` // 乐观锁版本号
     CreatedAt    time.Time      `json:"created_at"`

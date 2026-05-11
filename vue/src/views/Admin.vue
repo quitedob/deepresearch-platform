@@ -7,6 +7,7 @@
           <p class="header-subtitle">系统概览与管理</p>
         </div>
         <div class="admin-stats-grid">
+          <div v-if="statsError" class="stats-error">⚠️ {{ statsError }}</div>
           <div class="admin-stat-card">
             <div class="admin-stat-icon">
               <img src="@/assets/images/admin-users-3d.png" class="admin-stat-img" />
@@ -93,6 +94,7 @@ import QuotaConfig from '@/components/admin/QuotaConfig.vue'
 const activeTab = ref('users')
 const stats = ref({})
 const refreshKey = ref(0)
+const statsError = ref('')
 
 const tabs = [
   { id: 'users', name: '用户管理', icon: '👤' },
@@ -117,16 +119,15 @@ watch(activeTab, (newTab, oldTab) => {
 })
 
 const loadStats = async () => {
+  statsError.value = ''
   try {
     const response = await getAdminStats()
-    stats.value = response.data || response
+    // 拦截器已解包一层，response 直接是业务数据
+    stats.value = response || {}
   } catch (error) {
+    const msg = error.message || '加载统计信息失败'
+    statsError.value = msg
     console.error('加载统计信息失败:', error)
-    // 显示友好的错误提示
-    if (error.response?.data?.error) {
-      const apiError = error.response.data.error
-      console.error('API错误:', apiError.code, apiError.message)
-    }
   }
 }
 
@@ -319,6 +320,16 @@ onMounted(() => {
   .admin-stat-card {
     flex: 1;
   }
+}
+
+.stats-error {
+  color: #ef4444;
+  font-size: 13px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  align-self: center;
 }
 
 .admin-stat-icon {

@@ -1,10 +1,34 @@
 package paper
 
-import "unicode/utf8"
+import (
+	"unicode"
+	"unicode/utf8"
+)
 
-// CountWords 计算中文字数（按字符数，非字节数）
-// 对于中文论文，一个汉字算一个字，标点符号也算
+// CountWords 计算中文字数（排除空白字符，保留汉字、字母、数字）
+// 对于中文学术论文，标点符号和空格不计入字数
 func CountWords(content string) int {
+	count := 0
+	for _, r := range content {
+		// 跳过空白字符
+		if unicode.IsSpace(r) {
+			continue
+		}
+		// 跳过 Markdown 标记字符（#、*、_、`、>、-、|、~）
+		if r == '#' || r == '*' || r == '_' || r == '`' || r == '>' || r == '-' || r == '|' || r == '~' {
+			continue
+		}
+		// 跳过标点符号（中英文标点）
+		if unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// CountWordsRaw 计算原始字符数（含标点和空格，用于兼容旧逻辑）
+func CountWordsRaw(content string) int {
 	return utf8.RuneCountInString(content)
 }
 

@@ -41,6 +41,10 @@
           <span class="nav-icon">🎯</span>
           <span class="nav-label">AI出题</span>
         </router-link>
+        <router-link to="/paper" class="nav-tab" :class="{ active: $route.path.startsWith('/paper') }" @click="closeMobileSidebar">
+          <span class="nav-icon">📄</span>
+          <span class="nav-label">论文</span>
+        </router-link>
       </div>
       
       <MembershipInfo v-if="showMembership" />
@@ -51,6 +55,7 @@
       <HistoryList v-if="$route.path === '/home'" />
       <AIQuestionHistoryList v-else-if="$route.path === '/ai-space'" />
     </div>
+    <!-- 论文路由无历史列表，留空即可 -->
     </div>
   </div>
 </template>
@@ -183,12 +188,12 @@ watch(() => route.path, (newPath) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 8px 6px;
   border-radius: 8px;
   text-decoration: none;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   transition: all 0.2s ease;
 }
@@ -209,7 +214,7 @@ watch(() => route.path, (newPath) => {
 }
 
 .nav-label {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* 亮色模式下的导航标签 */

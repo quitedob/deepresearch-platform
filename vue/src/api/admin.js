@@ -19,9 +19,12 @@ export async function getAdminStats() {
  * 获取用户列表
  * @param {number} limit - 分页大小
  * @param {number} offset - 分页偏移
+ * @param {string} query - 搜索关键词（用户名或邮箱）
  */
-export async function listUsers(limit = 20, offset = 0) {
-  return await apiClient.get('/admin/users', { params: { limit, offset } })
+export async function listUsers(limit = 20, offset = 0, query = '') {
+  const params = { limit, offset }
+  if (query) params.query = query
+  return await apiClient.get('/admin/users', { params })
 }
 
 /**

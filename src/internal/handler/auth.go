@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/ai-research-platform/internal/auth"
-	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/ai-research-platform/internal/pkg/auth"
+	model "github.com/ai-research-platform/internal/repository/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -45,7 +45,7 @@ type RefreshTokenRequest struct {
 // AuthResponse 表示认证响应
 type AuthResponse struct {
 	Token     string       `json:"token"`
-	User      *models.User `json:"user"`
+	User      *model.User `json:"user"`
 	ExpiresIn int64        `json:"expires_in"`
 }
 
@@ -61,7 +61,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 检查用户是否已存在
-	var existingUser models.User
+	var existingUser model.User
 	if err := h.db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "user with this email already exists",
@@ -79,7 +79,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 创建用户
-	user := &models.User{
+	user := &model.User{
 		ID:       uuid.New().String(),
 		Email:    req.Email,
 		Username: req.Username,
@@ -121,7 +121,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// 根据邮箱查找用户
-	var user models.User
+	var user model.User
 	if err := h.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "invalid credentials",
@@ -183,7 +183,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	// 从数据库获取用户
-	var user models.User
+	var user model.User
 	if err := h.db.Where("id = ?", claims.UserID).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "user not found",

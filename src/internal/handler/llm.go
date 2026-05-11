@@ -28,36 +28,17 @@ type TestProviderRequest struct {
 
 // ListProviders 列出所有已注册的LLM提供商
 func (h *LLMHandler) ListProviders(c *gin.Context) {
-	providers := h.llmScheduler.ListProviders()
+	providers := h.llmScheduler.GetRegisteredProviders()
 
-	// 获取每个提供商的指标
-	providersWithMetrics := make([]gin.H, 0, len(providers))
+	providersWithInfo := make([]gin.H, 0, len(providers))
 	for _, name := range providers {
-		metric, exists := h.llmScheduler.GetMetrics(name)
-
-		providerInfo := gin.H{
+		providersWithInfo = append(providersWithInfo, gin.H{
 			"name": name,
-		}
-
-		if exists {
-			successRate := h.llmScheduler.GetSuccessRate(name)
-			avgLatency := h.llmScheduler.GetAverageLatency(name)
-
-			providerInfo["metrics"] = gin.H{
-				"success_count":    metric.SuccessCount,
-				"failure_count":    metric.FailureCount,
-				"success_rate":     successRate,
-				"average_latency":  avgLatency.Milliseconds(),
-				"last_success":     metric.LastSuccess,
-				"last_failure":     metric.LastFailure,
-			}
-		}
-
-		providersWithMetrics = append(providersWithMetrics, providerInfo)
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"providers": providersWithMetrics,
+		"providers": providersWithInfo,
 		"count":     len(providers),
 	})
 }
@@ -70,77 +51,40 @@ func (h *LLMHandler) GetProviderMetrics(c *gin.Context) {
 		return
 	}
 
-	metric, exists := h.llmScheduler.GetMetrics(provider)
-	if !exists {
+	// Check if provider exists
+	providers := h.llmScheduler.GetRegisteredProviders()
+	found := false
+	for _, name := range providers {
+		if name == provider {
+			found = true
+			break
+		}
+	}
+	if !found {
 		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
 		return
 	}
 
-	successRate := h.llmScheduler.GetSuccessRate(provider)
-	avgLatency := h.llmScheduler.GetAverageLatency(provider)
-
 	c.JSON(http.StatusOK, gin.H{
-		"provider":         provider,
-		"success_count":    metric.SuccessCount,
-		"failure_count":    metric.FailureCount,
-		"success_rate":     successRate,
-		"average_latency":  avgLatency.Milliseconds(),
-		"total_latency":    metric.TotalLatency.Milliseconds(),
-		"last_success":     metric.LastSuccess,
-		"last_failure":     metric.LastFailure,
+		"provider": provider,
 	})
 }
 
 // ListModels 列出所有提供商的所有可用模型
 func (h *LLMHandler) ListModels(c *gin.Context) {
+	registered := h.llmScheduler.GetRegisteredModels()
+
+	models := make([]gin.H, 0, len(registered))
+	for modelName, provider := range registered {
+		models = append(models, gin.H{
+			"name":     modelName,
+			"provider": provider,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"models": []gin.H{
-			// DeepSeek 模型
-			{
-				"name":        "deepseek-chat",
-				"provider":    "deepseek",
-				"description": "DeepSeek-V3.2-Exp 非思考模型",
-				"available":   true,
-			},
-			{
-				"name":        "deepseek-reasoner",
-				"provider":    "deepseek",
-				"description": "DeepSeek-V3.2-Exp 思考模型",
-				"available":   true,
-			},
-			// 智谱AI 模型
-			{
-				"name":        "glm-4.7",
-				"provider":    "zhipu",
-				"description": "高智能旗舰模型",
-				"available":   true,
-			},
-			{
-				"name":        "glm-4.5-air",
-				"provider":    "zhipu",
-				"description": "高性价比模型",
-				"available":   true,
-			},
-			// Ollama 本地模型
-			{
-				"name":        "gemma3:12b",
-				"provider":    "ollama",
-				"description": "Google Gemma 3 12B本地模型",
-				"available":   true,
-			},
-			{
-				"name":        "qwen3:8b",
-				"provider":    "ollama",
-				"description": "阿里通义千问3本地模型",
-				"available":   true,
-			},
-			{
-				"name":        "gemma3:4b",
-				"provider":    "ollama",
-				"description": "Google Gemma 3 4B本地模型",
-				"available":   true,
-			},
-		},
+		"models": models,
+		"count":  len(models),
 	})
 }
 

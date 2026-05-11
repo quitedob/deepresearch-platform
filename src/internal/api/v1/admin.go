@@ -121,8 +121,18 @@ func (api *AdminAPI) ListUsers(c *gin.Context) {
 
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	// P1 修复：支持搜索参数
+	query := c.Query("query")
 
-	users, total, err := api.userDAO.ListAll(c.Request.Context(), limit, offset)
+	var users []*model.User
+	var total int64
+	var err error
+
+	if query != "" {
+		users, total, err = api.userDAO.Search(c.Request.Context(), query, limit, offset)
+	} else {
+		users, total, err = api.userDAO.ListAll(c.Request.Context(), limit, offset)
+	}
 	if err != nil {
 		pkg.InternalError(c, "获取用户列表失败")
 		return
@@ -1010,6 +1020,48 @@ func (api *AdminAPI) BatchResetUserQuotas(c *gin.Context) {
 		"success":     true,
 		"message":     "批量重置用户配额完成",
 		"total_count": len(req.UserIDs),
+	})
+}
+
+// DeleteUser 删除单个用户
+func (api *AdminAPI) DeleteUser(c *gin.Context) {
+	if !api.RequireAdmin(c) {
+		return
+	}
+
+	userID := c.Param("id")
+	if userID == "" {
+		pkg.BadRequest(c, "用户ID不能为空")
+		return
+	}
+
+	// 防止删除自己
+	adminID, _ := c.Get("user_id")
+	if adminID == userID {
+		pkg.BadRequest(c, "不能删除自己的账户")
+		return
+	}
+
+	var req struct {
+		SoftDelete bool `json:"soft_delete"`
+		Confirm    bool `json:"confirm"`
+	}
+	c.ShouldBindJSON(&req)
+
+	if !req.Confirm {
+		pkg.BadRequest(c, "请确认删除操作")
+		return
+	}
+
+	if err := api.userDAO.BatchDelete(c.Request.Context(), []string{userID}); err != nil {
+		pkg.InternalError(c, "删除用户失败")
+		return
+	}
+
+	pkg.Success(c, gin.H{
+		"success": true,
+		"message": "用户已删除",
+		"user_id": userID,
 	})
 }
 

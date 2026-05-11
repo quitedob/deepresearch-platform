@@ -33,6 +33,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { userAPI } from '@/api/index';
+import toast from '@/utils/toast';
 
 const memoryEnabled = ref(true);
 const customSystemPrompt = ref('');
@@ -63,8 +64,8 @@ const saveAllSettings = async () => {
   saving.value = true;
   try {
     await userAPI.updatePreferences({ memory_enabled: memoryEnabled.value, custom_system_prompt: customSystemPrompt.value });
-    alert('设置保存成功！');
-  } catch (error) { console.error('保存设置失败:', error); alert('保存设置失败，请重试'); }
+    toast.success('设置保存成功！');
+  } catch (error) { console.error('保存设置失败:', error); toast.error('保存设置失败，请重试'); }
   finally { saving.value = false; }
 };
 

@@ -31,10 +31,10 @@
       >
         <div class="item-content">
           <div class="item-title">{{ item.title }}</div>
-          <div class="item-preview">{{ item.last_message }}</div>
+          <div class="item-preview">{{ item.lastMessage }}</div>
           <div class="item-meta">
-            <span class="message-count">{{ item.message_count }} 条消息</span>
-            <span class="timestamp">{{ formatTime(item.updated_at) }}</span>
+            <span class="message-count">{{ item.messageCount }} 条消息</span>
+            <span class="timestamp">{{ formatTime(item.updatedAt) }}</span>
             <span v-if="item.pinned" class="pinned-indicator">📌</span>
           </div>
         </div>
@@ -75,6 +75,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useChatStore } from '@/store';
 import { chatAPI } from '@/api/index';
+import toast from '@/utils/toast';
 
 const chatStore = useChatStore();
 
@@ -116,7 +117,7 @@ async function handleSelectHistory(id) {
   } catch (error) {
     console.error('加载历史记录失败:', error);
     const errorMessage = chatStore.lastError?.userMessage || '加载失败，请重试';
-    alert(errorMessage);
+    toast.error(errorMessage);
     // 刷新会话列表，以防会话已被删除
     chatStore.fetchSessions();
   } finally {
@@ -133,20 +134,19 @@ async function clearHistory() {
     } catch (error) {
       console.error('清空对话历史失败:', error);
       const errorMessage = chatStore.lastError?.userMessage || '清空失败，请重试';
-      alert(errorMessage);
+      toast.error(errorMessage);
     }
   }
 }
 
 async function togglePin(item) {
   try {
-    // 这里应该调用API切换置顶状态
-    // 暂时本地实现
-    item.pinned = !item.pinned;
-    console.log(`${item.pinned ? '置顶' : '取消置顶'}对话:`, item.id);
+    const newPinned = !item.pinned;
+    await chatAPI.updateSession(item.id, { is_pinned: newPinned });
+    item.pinned = newPinned;
   } catch (error) {
     console.error('切换置顶状态失败:', error);
-    alert('操作失败，请重试');
+    toast.error('操作失败，请重试');
   }
 }
 
@@ -160,7 +160,7 @@ async function deleteHistory(id) {
       console.error('删除对话失败:', error);
       // 显示用户友好的错误信息
       const errorMessage = chatStore.lastError?.userMessage || '删除失败，请重试';
-      alert(errorMessage);
+      toast.error(errorMessage);
     }
   }
 }

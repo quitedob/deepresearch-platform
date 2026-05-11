@@ -24,15 +24,7 @@ export async function register(userData) {
  */
 export async function login(credentials) {
   const response = await authAPI.login(credentials)
-  
-  // 保存token
-  if (response.access_token) {
-    localStorage.setItem('auth_token', response.access_token)
-    if (response.refresh_token) {
-      localStorage.setItem('refresh_token', response.refresh_token)
-    }
-  }
-  
+  // token 保存由 Login.vue 根据 rememberMe 设置决定存储位置
   return response
 }
 

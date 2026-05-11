@@ -233,3 +233,35 @@ func (u *UserDAO) BatchDelete(ctx context.Context, userIDs []string) error {
 
 	return u.db.WithContext(ctx).Where("id IN ?", userIDs).Delete(&model.User{}).Error
 }
+
+// IsAdmin 检查用户是否为管理员（实现 middleware.UserAdminChecker 接口）
+func (u *UserDAO) IsAdmin(ctx context.Context, userID string) (bool, error) {
+	user, err := u.FindByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return user.IsAdmin, nil
+}
+
+// Search 搜索用户（按用户名或邮箱模糊匹配）
+func (u *UserDAO) Search(ctx context.Context, query string, limit, offset int) ([]*model.User, int64, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var users []*model.User
+	var total int64
+
+	db := u.db.WithContext(ctx).Model(&model.User{})
+	if query != "" {
+		like := "%" + query + "%"
+		db = db.Where("username ILIKE ? OR email ILIKE ?", like, like)
+	}
+
+	db.Count(&total)
+	err := db.Order("created_at DESC").Limit(limit).Offset(offset).Find(&users).Error
+	return users, total, err
+}

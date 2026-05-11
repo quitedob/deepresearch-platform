@@ -146,6 +146,7 @@ import {
   updateActivationCode, 
   deleteActivationCode 
 } from '@/api/admin'
+import toast from '@/utils/toast'
 
 const codes = ref([])
 const total = ref(0)
@@ -193,7 +194,7 @@ const formatDate = (dateStr) => {
 const copyCode = async (code) => {
   try {
     await navigator.clipboard.writeText(code);
-    alert('已复制到剪贴板');
+    toast.success('已复制到剪贴板');
   } catch (err) {
     try {
       const textarea = document.createElement('textarea');
@@ -204,10 +205,10 @@ const copyCode = async (code) => {
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
-      alert('已复制到剪贴板');
+      toast.success('已复制到剪贴板');
     } catch (fallbackErr) {
       console.error('Failed to copy:', fallbackErr);
-      alert('复制失败，请手动复制');
+      toast.error('复制失败，请手动复制');
     }
   }
 }
@@ -239,7 +240,7 @@ const createCode = async () => {
     loadCodes()
   } catch (error) {
     console.error('创建激活码失败:', error)
-    alert('创建失败')
+    toast.error('创建失败')
   }
 }
 
@@ -315,17 +316,17 @@ const batchCreateCodes = async () => {
     loadCodes()
     
     // 显示创建结果
-    alert(`成功创建 ${createdCodes.length} 个激活码`)
+    toast.success(`成功创建 ${createdCodes.length} 个激活码`)
   } catch (error) {
     console.error('批量创建激活码失败:', error)
-    alert('批量创建失败')
+    toast.error('批量创建失败')
   }
 }
 
 // 导出激活码
 const exportCodes = () => {
   if (codes.value.length === 0) {
-    alert('没有可导出的激活码')
+    toast.warning('没有可导出的激活码')
     return
   }
   

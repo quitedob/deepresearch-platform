@@ -8,6 +8,7 @@ const (
 	BaseURLOllama     = "http://localhost:11434"
 	BaseURLOpenAI     = "https://api.z.ai/api/coding/paas/v4"
 	BaseURLOpenRouter = "https://openrouter.ai/api/v1"
+	BaseURLMiniMax    = "https://api.minimaxi.com/v1"
 )
 
 // LLM Provider Base URLs with version path (for direct API calls)
@@ -18,12 +19,12 @@ const (
 )
 
 // Zhipu MCP Tool Endpoints
-// MCP 工具使用 api.z.ai 端点，认证方式为 Bearer {api_key}
+// MCP 工具使用 open.bigmodel.cn 端点，认证方式为 Bearer {api_key}
 const (
 	ZhipuChatCompletionsURL        = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-	ZhipuWebReaderMCPEndpoint      = "https://api.z.ai/api/mcp/web_reader/mcp"
-	ZhipuZReadMCPEndpoint          = "https://api.z.ai/api/mcp/zread/mcp"
-	ZhipuWebSearchPrimeMCPEndpoint = "https://api.z.ai/api/mcp/web_search_prime/mcp"
+	ZhipuWebReaderMCPEndpoint      = "https://open.bigmodel.cn/api/mcp/web_reader/mcp"
+	ZhipuZReadMCPEndpoint          = "https://open.bigmodel.cn/api/mcp/zread/mcp"
+	ZhipuWebSearchPrimeMCPEndpoint = "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp"
 )
 
 // External API Endpoints
@@ -47,6 +48,8 @@ func ProviderBaseURL(provider string) string {
 		return BaseURLOllama
 	case ProviderOpenRouter:
 		return BaseURLOpenRouter
+	case ProviderMiniMax:
+		return BaseURLMiniMax
 	default:
 		return ""
 	}
@@ -65,6 +68,8 @@ func ProviderBaseURLWithVersion(provider string) string {
 		return BaseURLOllamaV1
 	case ProviderOpenRouter:
 		return BaseURLOpenRouter
+	case ProviderMiniMax:
+		return BaseURLMiniMax
 	default:
 		return ""
 	}

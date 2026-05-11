@@ -75,6 +75,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getQuotaConfigs, updateQuotaConfig, batchSetUserQuota } from '@/api/admin'
+import toast from '@/utils/toast'
 
 const configs = ref([])
 const batchForm = ref({
@@ -119,17 +120,17 @@ const saveConfig = async (config) => {
       reset_period_hours: config.reset_period_hours || 0,
       apply_to_all: config.apply_to_all
     })
-    alert(config.apply_to_all ? '配置已保存并应用到所有用户' : '配置已保存')
+    toast.success(config.apply_to_all ? '配置已保存并应用到所有用户' : '配置已保存')
   } catch (error) {
     console.error('保存配额配置失败:', error)
-    alert('保存失败')
+    toast.error('保存失败')
   }
 }
 
 const batchSetQuota = async () => {
   const userIds = batchForm.value.userIds.split('\n').map(id => id.trim()).filter(id => id)
   if (userIds.length === 0) {
-    alert('请输入用户ID')
+    toast.warning('请输入用户ID')
     return
   }
   
@@ -141,10 +142,10 @@ const batchSetQuota = async () => {
       batchForm.value.resetUsage
     )
     const data = response.data || response
-    alert(`批量设置完成：成功 ${data.success_count}/${data.total_count}`)
+    toast.success(`批量设置完成：成功 ${data.success_count}/${data.total_count}`)
   } catch (error) {
     console.error('批量设置失败:', error)
-    alert('批量设置失败')
+    toast.error('批量设置失败')
   }
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/ai-research-platform/internal/infrastructure/config"
 	"github.com/ai-research-platform/internal/infrastructure/database"
 	"github.com/ai-research-platform/internal/infrastructure/logger"
+	"github.com/ai-research-platform/internal/middleware"
 	pkgauth "github.com/ai-research-platform/internal/pkg/auth"
 	"github.com/ai-research-platform/internal/repository"
 	"github.com/ai-research-platform/internal/repository/dao"
@@ -142,6 +143,8 @@ func main() {
 
 	// 初始化认证组件
 	jwtManager := pkgauth.NewJWTManager(cfg.Security.JWTSecret, time.Duration(cfg.Security.JWTExpiration)*time.Second)
+	// P0 修复：确保中间件层使用与 jwtManager 相同的密钥，消除两套 JWTManager 不一致问题
+	middleware.InitDefaultJWTManager(cfg.Security.JWTSecret, time.Duration(cfg.Security.JWTExpiration)*time.Second)
 
 	// 初始化LLM调度器
 	llmScheduler := eino.NewLLMScheduler()
@@ -181,6 +184,10 @@ func main() {
 				log.Error("智谱AI模型创建失败",
 					zap.String("model", modelName),
 					zap.Error(err))
+				continue
+			}
+			if zhipuModel == nil {
+				log.Error("智谱AI模型创建返回nil，跳过注册", zap.String("model", modelName))
 				continue
 			}
 			// 使用 "provider:model" 作为唯一的 provider name
@@ -260,6 +267,29 @@ func main() {
 		log.Warn("OpenAI兼容 Provider未配置或API密钥为空")
 	}
 
+	// MiniMax - OpenAI 兼容格式调用 MiniMax-M2.7
+	if minimaxCfg, ok := cfg.LLM.Providers[constant.ProviderMiniMax]; ok && minimaxCfg.APIKey != "" {
+		log.Info("注册 MiniMax Provider (OpenAI兼容格式)",
+			zap.Strings("models", minimaxCfg.Models),
+			zap.String("api_key_masked", maskAPIKey(minimaxCfg.APIKey)),
+			zap.String("base_url", minimaxCfg.BaseURL))
+		for _, modelName := range minimaxCfg.Models {
+			minimaxModel, err := createOpenAICompatibleModel(minimaxCfg.APIKey, minimaxCfg.BaseURL, modelName)
+			if err != nil {
+				log.Error("MiniMax模型创建失败",
+					zap.String("model", modelName),
+					zap.Error(err))
+				continue
+			}
+			// 使用 "minimax:model" 作为唯一的 provider name
+			providerKey := constant.ProviderMiniMax + ":" + modelName
+			llmScheduler.RegisterProvider(providerKey, minimaxModel, []string{modelName})
+			log.Info("MiniMax模型注册成功", zap.String("model", modelName))
+		}
+	} else {
+		log.Warn("MiniMax Provider未配置或API密钥为空")
+	}
+
 	// ==================== 初始化深度研究服务 ====================
 	var researchService *service.ResearchService
 	var researchTools []eino.InvokableTool // 提前声明，供 MCP API 复用
@@ -291,6 +321,24 @@ func main() {
 		log.Warn("没有可用的工具API Key，MCP工具将无法初始化")
 	}
 
+	// 读取 MiniMax WebSearch 配置（用于 MiniMax 网络搜索）
+	var miniMaxAPIKey string
+	var enableMiniMax bool
+	// 优先使用配置文件中的 MiniMax WebSearch 设置
+	if cfg.MiniMaxWebSearch.Enabled && cfg.MiniMaxWebSearch.APIKey != "" {
+		miniMaxAPIKey = cfg.MiniMaxWebSearch.APIKey
+		enableMiniMax = true
+		log.Info("使用 MiniMax 网络搜索（配置驱动）",
+			zap.String("api_key_masked", maskAPIKey(miniMaxAPIKey)),
+			zap.Bool("enabled", enableMiniMax))
+	} else if v := os.Getenv("MINIMAX_API_KEY"); v != "" {
+		// 回退到环境变量
+		miniMaxAPIKey = v
+		enableMiniMax = true
+		log.Info("检测到 MiniMax API Key，将使用 MiniMax 网络搜索替代智谱 web_search（环境变量）",
+			zap.String("api_key_masked", maskAPIKey(miniMaxAPIKey)))
+	}
+
 	if researchAPIKey != "" {
 		log.Info("初始化深度研究服务...")
 
@@ -305,19 +353,22 @@ func main() {
 			// 创建研究工具（含 Web Search Prime MCP）
 			toolsConfig := eino.ToolsConfig{
 				WebSearchAPIKey:    toolsAPIKey,
+				MiniMaxAPIKey:      miniMaxAPIKey,
 				ArxivMaxResults:    10,
 				WikipediaLanguage:  "zh",
 				Timeout:            60 * time.Second,
 				EnableReliability:  true,
 				EnableZRead:        true,
 				EnableWebReader:    true,
-				EnableSearchPrime:  true, // 启用 Web Search Prime MCP（增强搜索）
+				EnableSearchPrime:  true,        // 启用 Web Search Prime MCP（增强搜索）
+				EnableMiniMax:      enableMiniMax, // 使用配置文件/环境变量设置的开关
 			}
 			log.Info("准备创建研究工具",
 				zap.Bool("tools_api_key_set", toolsAPIKey != ""),
 				zap.Bool("enable_zread", toolsConfig.EnableZRead),
 				zap.Bool("enable_web_reader", toolsConfig.EnableWebReader),
-				zap.Bool("enable_search_prime", toolsConfig.EnableSearchPrime))
+				zap.Bool("enable_search_prime", toolsConfig.EnableSearchPrime),
+				zap.Bool("enable_minimax", toolsConfig.EnableMiniMax))
 			researchTools = eino.CreateResearchTools(toolsConfig)
 
 			// 打印所有工具名称
@@ -397,6 +448,7 @@ func main() {
 			// 创建论文工具
 			paperToolsConfig := eino.ToolsConfig{
 				WebSearchAPIKey:    toolsAPIKey,
+				MiniMaxAPIKey:      miniMaxAPIKey,
 				ArxivMaxResults:    10,
 				WikipediaLanguage:  "zh",
 				Timeout:            60 * time.Second,
@@ -404,6 +456,7 @@ func main() {
 				EnableZRead:        true,
 				EnableWebReader:    true,
 				EnableSearchPrime:  true,
+				EnableMiniMax:      enableMiniMax,
 			}
 			paperTools := eino.CreateResearchTools(paperToolsConfig)
 
@@ -426,7 +479,7 @@ func main() {
 
 	// 初始化API层
 	userAPI := v1.NewUserAPIEnhancedWithPreferences(jwtManager, nil, userDAO, userPreferencesDAO)
-	chatAPI := v1.NewChatAPIFull(chatDAO, userPreferencesDAO, membershipDAO, modelConfigDAO, llmScheduler, toolsAPIKey)
+	chatAPI := v1.NewChatAPIFull(chatDAO, userPreferencesDAO, membershipDAO, modelConfigDAO, llmScheduler, toolsAPIKey, miniMaxAPIKey, enableMiniMax)
 	researchAPI := v1.NewResearchAPI(researchDAO, researchService)
 	llmAPI := v1.NewLLMAPIWithDAO(llmScheduler, modelConfigDAO)
 	healthAPI := v1.NewHealthAPI(db, nil)
@@ -438,6 +491,10 @@ func main() {
 
 	// 初始化增强路由（包含所有API）
 	router := api.NewRouterEnhancedFull(userAPI, chatAPI, researchAPI, llmAPI, healthAPI, mcpAPI, adminAPI, membershipAPI, notificationAPI, aiQuestionAPI, paperAPI)
+	// P0 修复：注入 userDAO 作为管理员检查器，启用中间件层 is_admin 数据库验证
+	if userDAO != nil {
+		router.SetAdminChecker(userDAO)
+	}
 	engine := router.SetupEnhanced()
 
 	// 启动HTTP服务器

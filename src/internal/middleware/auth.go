@@ -1,45 +1,129 @@
 ﻿package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ai-research-platform/internal/pkg/auth"
 )
 
-// Auth 认证中间件 - 使用默认 JWT 管理器
-func Auth() gin.HandlerFunc {
+// UserAdminChecker 用于 AdminAuth 中间件的用户管理员检查接口
+// 避免循环依赖，通过接口注入
+type UserAdminChecker interface {
+	IsAdmin(ctx context.Context, userID string) (bool, error)
+}
+
+// 单例 JWTManager，避免每次请求重新创建
+var (
+	defaultJWTManager *auth.JWTManager
+	jwtManagerOnce    sync.Once
+)
+
+// InitDefaultJWTManager 使用指定密钥初始化单例 JWTManager
+// P0 修复：由 main.go 在启动时调用，确保与 config.yaml 中的 JWT_SECRET 一致
+// 必须在任何请求到达之前调用，否则回退到 os.Getenv("JWT_SECRET")
+func InitDefaultJWTManager(secret string, expiration time.Duration) {
+	jwtManagerOnce.Do(func() {
+		defaultJWTManager = auth.NewJWTManager(secret, expiration)
+	})
+}
+
+// getDefaultJWTManager 返回单例 JWTManager
+func getDefaultJWTManager() *auth.JWTManager {
+	jwtManagerOnce.Do(func() {
+		// 回退：如果 InitDefaultJWTManager 未被调用，从环境变量读取
+		defaultJWTManager = auth.NewJWTManager(getJWTSecret(), 24*time.Hour)
+	})
+	return defaultJWTManager
+}
+
+// unauthorizedResponse 返回统一的 401 错误格式，与前端拦截器期望的格式匹配
+func unauthorizedResponse(c *gin.Context, code, message string) {
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"success": false,
+		"code":    code,
+		"message": message,
+		"error": gin.H{
+			"code":    code,
+			"message": message,
+		},
+	})
+	c.Abort()
+}
+
+// AdminAuth 管理员认证中间件 - 验证 JWT 并通过数据库检查 is_admin 字段
+// P0 修复：在路由层拦截非管理员请求，不再仅依赖 handler 内的二次检查
+func AdminAuth(checker ...UserAdminChecker) gin.HandlerFunc {
+	var adminChecker UserAdminChecker
+	if len(checker) > 0 {
+		adminChecker = checker[0]
+	}
+
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "authorization header required",
-			})
-			c.Abort()
+			unauthorizedResponse(c, "ERR_UNAUTHORIZED", "缺少Authorization头")
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid authorization header format",
-			})
-			c.Abort()
+			unauthorizedResponse(c, "ERR_UNAUTHORIZED", "无效的Authorization头格式")
 			return
 		}
 
-		// 使用默认 JWT 管理器验证令牌
-		jwtManager := auth.NewJWTManager(getJWTSecret(), 24*time.Hour)
-		claims, err := jwtManager.ValidateToken(parts[1])
+		claims, err := getDefaultJWTManager().ValidateToken(parts[1])
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid or expired token",
-			})
-			c.Abort()
+			unauthorizedResponse(c, "ERR_TOKEN_INVALID", "无效或已过期的令牌")
+			return
+		}
+
+		// P0 修复：如果注入了 checker，在中间件层做数据库级 is_admin 验证
+		if adminChecker != nil {
+			isAdmin, err := adminChecker.IsAdmin(c.Request.Context(), claims.UserID)
+			if err != nil || !isAdmin {
+				c.JSON(http.StatusForbidden, gin.H{
+					"success": false,
+					"code":    "ERR_FORBIDDEN",
+					"message": "需要管理员权限",
+				})
+				c.Abort()
+				return
+			}
+		}
+
+		c.Set("user_id", claims.UserID)
+		c.Set("email", claims.Email)
+		c.Set("username", claims.Username)
+
+		c.Next()
+	}
+}
+
+// Auth 认证中间件 - 使用单例 JWT 管理器，返回统一错误格式
+func Auth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			unauthorizedResponse(c, "ERR_UNAUTHORIZED", "缺少Authorization头")
+			return
+		}
+
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			unauthorizedResponse(c, "ERR_UNAUTHORIZED", "无效的Authorization头格式")
+			return
+		}
+
+		claims, err := getDefaultJWTManager().ValidateToken(parts[1])
+		if err != nil {
+			unauthorizedResponse(c, "ERR_TOKEN_INVALID", "无效或已过期的令牌")
 			return
 		}
 
@@ -98,8 +182,7 @@ func ValidateTokenString(tokenString string) (string, error) {
 		return "", http.ErrNoCookie
 	}
 
-	jwtManager := auth.NewJWTManager(getJWTSecret(), 24*time.Hour)
-	claims, err := jwtManager.ValidateToken(tokenString)
+	claims, err := getDefaultJWTManager().ValidateToken(tokenString)
 	if err != nil {
 		return "", err
 	}

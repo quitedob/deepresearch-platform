@@ -40,12 +40,20 @@ func NewPaperEventStream(bufferSize int) *PaperEventStream {
 }
 
 // Subscribe 订阅事件流
-// 添加自动清理机制，防止客户端异常断开导致 channel 泄漏
+// 如果同一 sessionID 已有旧 channel，先关闭旧的再创建新的，防止泄漏
 func (s *PaperEventStream) Subscribe(sessionID string) chan *response.PaperProgressEvent {
 	ch := make(chan *response.PaperProgressEvent, s.bufferSize)
+	// 关闭并替换旧 channel（防止多次订阅泄漏）
+	if old, loaded := s.streams.LoadAndDelete(sessionID); loaded {
+		// 用 recover 防止关闭已关闭 channel 的 panic
+		func() {
+			defer func() { recover() }()
+			close(old.(chan *response.PaperProgressEvent))
+		}()
+	}
 	s.streams.Store(sessionID, ch)
 
-	// 35分钟后自动清理（论文生成超时30分钟 + 5分钟缓冲）
+	// 35分钟后自动清理
 	go func() {
 		time.Sleep(35 * time.Minute)
 		s.Unsubscribe(sessionID)
@@ -57,19 +65,28 @@ func (s *PaperEventStream) Subscribe(sessionID string) chan *response.PaperProgr
 // Unsubscribe 取消订阅
 func (s *PaperEventStream) Unsubscribe(sessionID string) {
 	if ch, ok := s.streams.LoadAndDelete(sessionID); ok {
-		close(ch.(chan *response.PaperProgressEvent))
+		func() {
+			defer func() { recover() }()
+			close(ch.(chan *response.PaperProgressEvent))
+		}()
 	}
 }
 
-// Send 发送事件
+// Send 发送事件（并发安全，channel 关闭后不 panic）
 func (s *PaperEventStream) Send(sessionID string, event *response.PaperProgressEvent) {
-	if ch, ok := s.streams.Load(sessionID); ok {
+	ch, ok := s.streams.Load(sessionID)
+	if !ok {
+		return
+	}
+	// 用 recover 防止向已关闭 channel 发送时 panic
+	func() {
+		defer func() { recover() }()
 		select {
 		case ch.(chan *response.PaperProgressEvent) <- event:
 		default:
-			// 缓冲区满，丢弃旧消息
+			// 缓冲区满，丢弃
 		}
-	}
+	}()
 }
 
 // NewPaperService 创建论文服务
@@ -137,6 +154,23 @@ func (s *PaperService) StartPaperGeneration(ctx context.Context, userID string, 
 
 // executePaperGeneration 执行论文生成（后台运行）
 func (s *PaperService) executePaperGeneration(sessionID, title, topic, inputContent, paperType string, targetWords int, options map[string]interface{}) {
+	// panic 恢复：防止 goroutine 崩溃导致会话永远停留在 drafting 状态
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("论文生成 goroutine panic",
+				zap.String("session_id", sessionID),
+				zap.Any("panic", r),
+			)
+			ctx := context.Background()
+			s.repo.UpdateSessionStatus(ctx, sessionID, "failed", 0)
+			s.eventStream.Send(sessionID, &response.PaperProgressEvent{
+				Type:      "error",
+				Message:   fmt.Sprintf("论文生成发生内部错误"),
+				Timestamp: time.Now(),
+			})
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Minute)
 	defer cancel()
 
@@ -146,29 +180,29 @@ func (s *PaperService) executePaperGeneration(sessionID, title, topic, inputCont
 		zap.Int("target_words", targetWords),
 	)
 
-	// 应用选项到 PaperAgent 配置
+	// 解析会话级配置（不修改全局 Agent 状态）
+	citationStyle := ""
+	maxReviewRounds := 0
 	if options != nil {
-		if style, ok := options["citation_style"].(string); ok && style != "" {
-			s.paperAgent.SetCitationStyle(style)
+		if style, ok := options["citation_style"].(string); ok {
+			citationStyle = style
 		}
-		if rounds, ok := options["max_review_rounds"].(int); ok && rounds > 0 {
-			s.paperAgent.SetMaxReviewRounds(rounds)
+		if rounds, ok := options["max_review_rounds"].(int); ok {
+			maxReviewRounds = rounds
 		}
-		// max_review_rounds 也可能从 JSON 解析为 float64
-		if rounds, ok := options["max_review_rounds"].(float64); ok && rounds > 0 {
-			s.paperAgent.SetMaxReviewRounds(int(rounds))
+		if rounds, ok := options["max_review_rounds"].(float64); ok {
+			maxReviewRounds = int(rounds)
 		}
 	}
+	// 为本次会话设置独立配置（并发安全）
+	s.paperAgent.SetSessionConfig(sessionID, citationStyle, maxReviewRounds)
 
-	// 注册进度回调（会话级别的 callback，执行结束后清除）
-	s.paperAgent.RegisterCallback(func(event *agent.PaperProgressEvent) {
-		// 更新数据库状态
+	// 注册会话级别的进度回调（并发安全，不影响其他会话）
+	s.paperAgent.RegisterSessionCallback(sessionID, func(event *agent.PaperProgressEvent) {
 		s.repo.UpdateSessionStatus(ctx, sessionID, event.Stage, event.Progress)
 		if event.CurrentWords > 0 {
 			s.repo.UpdateSessionWords(ctx, sessionID, event.CurrentWords)
 		}
-
-		// 推送SSE事件
 		s.eventStream.Send(sessionID, &response.PaperProgressEvent{
 			Type:         "status_update",
 			Stage:        event.Stage,
@@ -181,10 +215,10 @@ func (s *PaperService) executePaperGeneration(sessionID, title, topic, inputCont
 			Timestamp:    event.Timestamp,
 		})
 	})
-	defer s.paperAgent.ClearCallbacks() // P0: 执行完毕后清除回调，防止跨会话累积
+	defer s.paperAgent.ClearSessionCallback(sessionID)
 
 	// 执行论文生成
-	result, err := s.paperAgent.Run(ctx, title, topic, inputContent, paperType, targetWords)
+	result, err := s.paperAgent.RunWithSession(ctx, sessionID, title, topic, inputContent, paperType, targetWords)
 	if err != nil {
 		s.logger.Error("论文生成失败", zap.String("session_id", sessionID), zap.Error(err))
 		s.repo.UpdateSessionStatus(ctx, sessionID, "failed", 0)
@@ -402,6 +436,22 @@ func (s *PaperService) GetPaperResult(ctx context.Context, sessionID, userID str
 	}, nil
 }
 
+// UpdateChapterContent 手动更新章节内容（用户编辑）
+func (s *PaperService) UpdateChapterContent(ctx context.Context, sessionID, chapterID, userID, content string) error {
+	if err := s.CheckOwnership(ctx, sessionID, userID); err != nil {
+		return fmt.Errorf("无权操作该论文")
+	}
+	chapter, err := s.repo.GetChapterByID(ctx, chapterID)
+	if err != nil {
+		return fmt.Errorf("章节不存在")
+	}
+	if chapter.PaperID != sessionID {
+		return fmt.Errorf("章节不属于该论文")
+	}
+	wordCount := paper.CountWords(content)
+	return s.repo.UpdateChapterContent(ctx, chapterID, content, wordCount)
+}
+
 // ExportPaper 导出论文
 func (s *PaperService) ExportPaper(ctx context.Context, sessionID, userID, format string) (string, string, error) {
 	// IDOR 校验
@@ -417,12 +467,135 @@ func (s *PaperService) ExportPaper(ctx context.Context, sessionID, userID, forma
 	switch format {
 	case "markdown", "md":
 		return result.FullContent, "text/markdown", nil
+	case "latex", "tex":
+		tex := s.buildLaTeX(result)
+		return tex, "application/x-latex", nil
 	case "docx":
-		// DOCX 导出尚未实现，返回明确错误而非静默降级
-		return "", "", fmt.Errorf("DOCX 导出尚未支持，请使用 markdown 格式")
+		return "", "", fmt.Errorf("DOCX 导出尚未支持，请使用 markdown 或 latex 格式")
 	default:
 		return result.FullContent, "text/markdown", nil
 	}
+}
+
+// buildLaTeX 将论文结果转换为 LaTeX 文档
+func (s *PaperService) buildLaTeX(result *response.PaperResultData) string {
+	var sb strings.Builder
+
+	// 文档头
+	sb.WriteString("\\documentclass[12pt,a4paper]{article}\n")
+	sb.WriteString("\\usepackage[UTF8]{ctex}\n")
+	sb.WriteString("\\usepackage{hyperref}\n")
+	sb.WriteString("\\usepackage{geometry}\n")
+	sb.WriteString("\\geometry{margin=2.5cm}\n")
+	sb.WriteString("\\usepackage{setspace}\n")
+	sb.WriteString("\\onehalfspacing\n\n")
+
+	// 标题信息
+	sb.WriteString(fmt.Sprintf("\\title{%s}\n", escapeLaTeX(result.Title)))
+	sb.WriteString("\\date{\\today}\n\n")
+	sb.WriteString("\\begin{document}\n")
+	sb.WriteString("\\maketitle\n\n")
+
+	// 章节内容
+	for _, ch := range result.Chapters {
+		if ch.ChapterType == "keywords" {
+			sb.WriteString(fmt.Sprintf("\\noindent\\textbf{关键词：} %s\n\n", escapeLaTeX(ch.Content)))
+			continue
+		}
+		if ch.ChapterType == "abstract" {
+			sb.WriteString("\\begin{abstract}\n")
+			sb.WriteString(markdownToLaTeX(ch.Content))
+			sb.WriteString("\n\\end{abstract}\n\n")
+			continue
+		}
+		if ch.ChapterType == "reference" {
+			// 参考文献单独处理
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("\\section{%s}\n", escapeLaTeX(ch.Title)))
+		sb.WriteString(markdownToLaTeX(ch.Content))
+		sb.WriteString("\n\n")
+	}
+
+	// 参考文献：如果有 BibTeX 格式的引用则输出 bibliography，否则用 enumerate
+	if len(result.Citations) > 0 {
+		// 检查第一条是否是 BibTeX 格式
+		if strings.HasPrefix(strings.TrimSpace(result.Citations[0].FormattedRef), "@") {
+			// BibTeX 格式：写入 .bib 内容作为注释，并用 thebibliography 环境
+			sb.WriteString("\\begin{thebibliography}{99}\n")
+			for i, c := range result.Citations {
+				sb.WriteString(fmt.Sprintf("\\bibitem{ref%d} %s\n", i+1, escapeLaTeX(c.FormattedRef)))
+			}
+			sb.WriteString("\\end{thebibliography}\n")
+		} else {
+			sb.WriteString("\\section*{参考文献}\n")
+			sb.WriteString("\\begin{enumerate}\n")
+			for _, c := range result.Citations {
+				sb.WriteString(fmt.Sprintf("  \\item %s\n", escapeLaTeX(c.FormattedRef)))
+			}
+			sb.WriteString("\\end{enumerate}\n")
+		}
+	}
+
+	sb.WriteString("\n\\end{document}\n")
+	return sb.String()
+}
+
+// escapeLaTeX 转义 LaTeX 特殊字符
+func escapeLaTeX(s string) string {
+	replacer := strings.NewReplacer(
+		"&", "\\&",
+		"%", "\\%",
+		"$", "\\$",
+		"#", "\\#",
+		"_", "\\_",
+		"{", "\\{",
+		"}", "\\}",
+		"~", "\\textasciitilde{}",
+		"^", "\\textasciicircum{}",
+		"\\", "\\textbackslash{}",
+	)
+	return replacer.Replace(s)
+}
+
+// markdownToLaTeX 简单的 Markdown → LaTeX 转换（处理常见格式）
+func markdownToLaTeX(md string) string {
+	lines := strings.Split(md, "\n")
+	var out []string
+	for _, line := range lines {
+		// 标题
+		if strings.HasPrefix(line, "### ") {
+			out = append(out, "\\subsubsection{"+escapeLaTeX(line[4:])+"}")
+		} else if strings.HasPrefix(line, "## ") {
+			out = append(out, "\\subsection{"+escapeLaTeX(line[3:])+"}")
+		} else if strings.HasPrefix(line, "# ") {
+			out = append(out, "\\section{"+escapeLaTeX(line[2:])+"}")
+		} else {
+			// 粗体 **text**
+			converted := line
+			for strings.Contains(converted, "**") {
+				start := strings.Index(converted, "**")
+				end := strings.Index(converted[start+2:], "**")
+				if end < 0 {
+					break
+				}
+				inner := converted[start+2 : start+2+end]
+				converted = converted[:start] + "\\textbf{" + escapeLaTeX(inner) + "}" + converted[start+2+end+2:]
+			}
+			// 斜体 *text*
+			for strings.Contains(converted, "*") {
+				start := strings.Index(converted, "*")
+				end := strings.Index(converted[start+1:], "*")
+				if end < 0 {
+					break
+				}
+				inner := converted[start+1 : start+1+end]
+				converted = converted[:start] + "\\textit{" + escapeLaTeX(inner) + "}" + converted[start+1+end+1:]
+			}
+			out = append(out, converted)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // ListPapers 获取用户的论文列表
@@ -492,9 +665,19 @@ func (s *PaperService) RegenerateChapter(ctx context.Context, sessionID, chapter
 
 	// 异步重新生成：真正调用 LLM
 	go func() {
+		// panic 恢复
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Error("章节重新生成 goroutine panic",
+					zap.String("chapter_id", chapterID),
+					zap.Any("panic", r),
+				)
+				s.repo.UpdateChapterStatus(context.Background(), chapterID, "failed")
+			}
+		}()
+
 		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		defer s.paperAgent.ClearCallbacks() // 防止回调累积
 
 		s.logger.Info("重新生成章节",
 			zap.String("session_id", sessionID),

@@ -61,6 +61,7 @@
 import { ref, computed, onMounted, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { login } from '@/api/user.js';
+import toast from '@/utils/toast';
 
 const router = useRouter();
 const username = ref('');
@@ -104,6 +105,9 @@ const doLogin = async () => {
 
     const storage = rememberMe.value ? localStorage : sessionStorage;
     storage.setItem('auth_token', data.access_token);
+    if (data.refresh_token) {
+      storage.setItem('refresh_token', data.refresh_token);
+    }
     storage.setItem('user', JSON.stringify(data.user));
     // 登录成功即视为完成欢迎流程，防止路由守卫死循环
     localStorage.setItem('welcome_completed', 'true');
@@ -111,7 +115,7 @@ const doLogin = async () => {
     const redirect = router.currentRoute.value.query?.redirect || '/';
     router.push(String(redirect));
   } catch (e) {
-    alert(e.message || '登录失败');
+    toast.error(e.message || '登录失败');
   } finally {
     submitting.value = false;
   }
@@ -121,6 +125,13 @@ onMounted(() => {
   const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
   if (token) {
     router.replace('/');
+    return;
+  }
+  // P1 修复：处理被禁用账户跳转，显示友好提示
+  const reason = router.currentRoute.value.query?.reason;
+  const msg = router.currentRoute.value.query?.msg;
+  if (reason === 'banned' && msg) {
+    toast.error(decodeURIComponent(String(msg)));
   }
 });
 </script>

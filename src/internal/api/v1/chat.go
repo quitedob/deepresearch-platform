@@ -2,6 +2,7 @@
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,6 +33,11 @@ type ChatAPI struct {
 	modelConfigDAO     *dao.ModelConfigDAO
 	llmScheduler       *eino.LLMScheduler
 	toolsAPIKey        string // 工具 API Key（用于联网搜索等）
+	miniMaxAPIKey      string // MiniMax API Key（用于 MiniMax 网络搜索）
+	enableMiniMax      bool   // 是否启用 MiniMax 网络搜索
+
+	// 缓存的 MiniMax MCP 搜索工具（复用子进程，避免每次请求创建新进程）
+	miniMaxSearchTool  eino.InvokableTool
 }
 
 // NewChatAPI 创建聊天API
@@ -52,7 +58,7 @@ func NewChatAPIWithPreferences(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferenc
 }
 
 // NewChatAPIFull 创建完整的聊天API（包含会员和模型配置）
-func NewChatAPIFull(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferencesDAO, membershipDAO *dao.MembershipDAO, modelConfigDAO *dao.ModelConfigDAO, scheduler *eino.LLMScheduler, toolsAPIKey string) *ChatAPI {
+func NewChatAPIFull(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferencesDAO, membershipDAO *dao.MembershipDAO, modelConfigDAO *dao.ModelConfigDAO, scheduler *eino.LLMScheduler, toolsAPIKey string, miniMaxAPIKey string, enableMiniMax bool) *ChatAPI {
 	return &ChatAPI{
 		chatDAO:            chatDAO,
 		userPreferencesDAO: prefsDAO,
@@ -60,6 +66,8 @@ func NewChatAPIFull(chatDAO *dao.ChatDAO, prefsDAO *dao.UserPreferencesDAO, memb
 		modelConfigDAO:     modelConfigDAO,
 		llmScheduler:       scheduler,
 		toolsAPIKey:        toolsAPIKey,
+		miniMaxAPIKey:      miniMaxAPIKey,
+		enableMiniMax:      enableMiniMax,
 	}
 }
 
@@ -75,6 +83,9 @@ func friendlyLLMError(err error) (string, string) {
 	}
 	if strings.Contains(err.Error(), "connection refused") {
 		return "ERR_LLM_UNAVAILABLE", "AI 服务暂时不可用，请稍后重试"
+	}
+	if strings.Contains(err.Error(), "未注册") || strings.Contains(err.Error(), "not supported") {
+		return "ERR_MODEL_NOT_CONFIGURED", "该模型未配置或 API Key 未正确设置，请联系管理员"
 	}
 	return "ERR_LLM_ERROR", "AI 服务调用失败，请稍后重试"
 }
@@ -343,6 +354,9 @@ func (api *ChatAPI) UpdateSession(c *gin.Context) {
 		if req.SystemPrompt != nil {
 			session.SystemPrompt = *req.SystemPrompt
 		}
+		if req.IsPinned != nil {
+			session.IsPinned = *req.IsPinned
+		}
 
 		if err := api.chatDAO.UpdateSession(c.Request.Context(), session); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新会话失败"})
@@ -583,6 +597,53 @@ func (api *ChatAPI) ClearMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "消息已清空"})
 }
 
+// BatchDeleteSessions 批量删除聊天会话
+func (api *ChatAPI) BatchDeleteSessions(c *gin.Context) {
+	userID, err := middleware.RequireAuth(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "认证失败"})
+		return
+	}
+
+	var req struct {
+		SessionIDs []string `json:"session_ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		return
+	}
+
+	if len(req.SessionIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "会话列表不能为空"})
+		return
+	}
+
+	// 验证所有会话都属于当前用户
+	if api.chatDAO != nil {
+		for _, sessionID := range req.SessionIDs {
+			session, err := api.chatDAO.GetSessionByID(c.Request.Context(), sessionID)
+			if err != nil {
+				continue // 跳过不存在的会话
+			}
+			if session.UserID != userID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权删除部分会话"})
+				return
+			}
+		}
+
+		if err := api.chatDAO.BatchDeleteSessions(c.Request.Context(), req.SessionIDs); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "批量删除会话失败"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"message":     "批量删除完成",
+		"total_count": len(req.SessionIDs),
+	})
+}
+
 // Chat 发送聊天消息（非流式）
 func (api *ChatAPI) Chat(c *gin.Context) {
 	userID, err := middleware.RequireAuth(c)
@@ -691,6 +752,11 @@ func (api *ChatAPI) Chat(c *gin.Context) {
 		}
 		providerName = session.Provider
 		modelName = session.Model
+
+		// 如果请求中指定了模型覆盖，使用请求中的模型
+		if req.ModelOverride != "" {
+			modelName = req.ModelOverride
+		}
 
 		// 根据请求切换模型
 		if req.UseDeepThink {
@@ -917,28 +983,90 @@ func (api *ChatAPI) ChatWebSearch(c *gin.Context) {
 		modelName = constant.DefaultModel
 	}
 
-	// 1. 使用 Web Search Prime MCP 进行网络搜索（增强版，走 api.z.ai）
-	webSearchTool := eino.CreateWebSearchPrimeTool(api.toolsAPIKey)
-	searchArgs := fmt.Sprintf(`{"search_query": "%s"}`, req.Message)
-	searchCtx, searchCancel := context.WithTimeout(context.Background(), 900*time.Second)
-	searchResult, searchErr := webSearchTool.InvokableRun(searchCtx, searchArgs)
-	searchCancel()
-	
+	// 1. 网络搜索：优先使用 MiniMax（配置 enabled 时），失败则 fallback 到智谱 web_search，再失败到 web_search_prime
+	var searchResult string
+	var searchErr error
+
+	// 主力：MiniMax MCP 网络搜索（stdio 子进程复用，稳定可靠）
+	if api.enableMiniMax && api.miniMaxAPIKey != "" {
+		// 懒初始化：首次使用时创建工具实例，后续复用同一子进程
+		if api.miniMaxSearchTool == nil {
+			api.miniMaxSearchTool = eino.CreateMiniMaxWebSearchTool(api.miniMaxAPIKey)
+		}
+		searchArgs, _ := json.Marshal(map[string]string{"query": req.Message})
+		searchCtx, searchCancel := context.WithTimeout(context.Background(), 120*time.Second)
+		searchResult, searchErr = api.miniMaxSearchTool.InvokableRun(searchCtx, string(searchArgs))
+		searchCancel()
+
+		if searchErr != nil {
+			fmt.Printf("[ChatWebSearch] minimax_web_search 失败: %v, query: %s\n", searchErr, req.Message)
+		} else if isEmptySearchResult(searchResult) {
+			fmt.Printf("[ChatWebSearch] minimax_web_search 返回空结果, query: %s\n", req.Message)
+			searchErr = fmt.Errorf("empty result from minimax_web_search")
+		} else {
+			fmt.Printf("[ChatWebSearch] minimax_web_search 成功, result_len: %d, query: %s\n", len(searchResult), req.Message)
+		}
+	}
+
+	// Fallback 1: web_search（智谱 Chat Completions + web_search tool）
+	if (searchErr != nil || searchResult == "") && api.toolsAPIKey != "" {
+		searchArgs, _ := json.Marshal(map[string]string{"query": req.Message})
+		searchTool := eino.CreateWebSearchTool(api.toolsAPIKey)
+		searchCtx, searchCancel := context.WithTimeout(context.Background(), 120*time.Second)
+		searchResult, searchErr = searchTool.InvokableRun(searchCtx, string(searchArgs))
+		searchCancel()
+
+		if searchErr != nil {
+			fmt.Printf("[ChatWebSearch] web_search fallback 也失败: %v, query: %s\n", searchErr, req.Message)
+		} else if isEmptySearchResult(searchResult) {
+			fmt.Printf("[ChatWebSearch] web_search fallback 返回空结果, query: %s\n", req.Message)
+			searchErr = fmt.Errorf("empty result from web_search")
+		} else {
+			fmt.Printf("[ChatWebSearch] web_search fallback 成功, result_len: %d, query: %s\n", len(searchResult), req.Message)
+		}
+	}
+
+	// Fallback 2: web_search_prime MCP（增强搜索）
+	if (searchErr != nil || searchResult == "") && api.toolsAPIKey != "" {
+		primeArgs, _ := json.Marshal(map[string]string{
+			"search_query": req.Message,
+			"content_size": "high",
+		})
+		primeTool := eino.CreateWebSearchPrimeTool(api.toolsAPIKey)
+		primeCtx, primeCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		searchResult, searchErr = primeTool.InvokableRun(primeCtx, string(primeArgs))
+		primeCancel()
+
+		if searchErr != nil {
+			fmt.Printf("[ChatWebSearch] web_search_prime fallback 也失败: %v, query: %s\n", searchErr, req.Message)
+		} else if isEmptySearchResult(searchResult) {
+			fmt.Printf("[ChatWebSearch] web_search_prime fallback 返回空结果, query: %s\n", req.Message)
+			searchErr = fmt.Errorf("empty result from web_search_prime")
+		} else {
+			fmt.Printf("[ChatWebSearch] web_search_prime fallback 成功, result_len: %d, query: %s\n", len(searchResult), req.Message)
+		}
+	}
+
 	// 2. 构建包含搜索结果的提示词
 	var searchPrompt string
 	if searchErr != nil || searchResult == "" {
-		// 搜索失败时，仍然尝试让 LLM 回答
+		// 搜索全部失败，仍然尝试让 LLM 回答
 		searchPrompt = fmt.Sprintf(`用户问题: %s
 
 注意：网络搜索暂时不可用，请根据您的知识尽可能回答用户的问题。`, req.Message)
 	} else {
 		// 搜索成功，将搜索结果作为上下文
-		searchPrompt = fmt.Sprintf(`用户问题: %s
+		searchPrompt = fmt.Sprintf(`你是一个联网搜索助手。以下是通过网络搜索获取的实时信息，请基于这些搜索结果回答用户问题。
 
-以下是网络搜索获取的最新信息：
+用户问题: %s
+
+网络搜索结果：
 %s
 
-请根据以上搜索结果，为用户提供详细、准确的回答。请在回答中适当引用搜索结果中的信息来源。`, req.Message, searchResult)
+要求：
+1. 必须基于上述搜索结果回答，不要说"无法访问网络"
+2. 适当引用信息来源
+3. 如果搜索结果不够完整，可以补充说明`, req.Message, searchResult)
 	}
 
 	messages := api.buildContextMessages(c.Request.Context(), userID, req.SessionID, searchPrompt)
@@ -1100,6 +1228,10 @@ func (api *ChatAPI) ChatStream(c *gin.Context) {
 			return
 		}
 		modelName = session.Model
+		// 如果请求中指定了模型覆盖，使用请求中的模型
+		if req.ModelOverride != "" {
+			modelName = req.ModelOverride
+		}
 	} else {
 		modelName = constant.DefaultModel
 	}
@@ -1585,4 +1717,36 @@ func estimateTokens(text string) int {
 	}
 
 	return int(float64(chineseCount)/1.5) + int(float64(englishCount)/4)
+}
+
+// isEmptySearchResult 检查搜索结果是否实质为空
+// web_search_prime 返回格式: "🔍 增强搜索结果 - xxx\n===...===\n\n[]"
+// MCP 可能返回 "[]" 或 "\"[]\"" (带引号的空数组)
+func isEmptySearchResult(result string) bool {
+	if result == "" || result == "[]" || result == `"[]"` {
+		return true
+	}
+	// 去掉标题行和分隔线，检查实际内容
+	trimmed := strings.TrimSpace(result)
+	lines := strings.Split(trimmed, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		// 空数组（带或不带引号）
+		if line == "[]" || line == `"[]"` {
+			continue
+		}
+		// 分隔线
+		if line == strings.Repeat("=", len(line)) {
+			continue
+		}
+		// 标题行 — 说明没有实际内容
+		if strings.HasPrefix(line, "🔍") {
+			return true
+		}
+		return false
+	}
+	return true
 }

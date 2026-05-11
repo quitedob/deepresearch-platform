@@ -135,6 +135,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { evidenceAPI } from '@/services/api.js'
+import toast from '@/utils/toast'
 
 // Props
 const props = defineProps({
@@ -200,7 +201,7 @@ const toggleEvidenceUsed = async (evidenceId, used) => {
     emit('evidence-updated')
   } catch (error) {
     console.error('标记证据使用状态失败:', error)
-    alert('操作失败，请重试')
+    toast.error('操作失败，请重试')
   } finally {
     markingUsed.value = null
   }
@@ -219,7 +220,7 @@ const toggleEvidenceVerified = async (evidenceId, verified) => {
     emit('evidence-updated')
   } catch (error) {
     console.error('标记证据验证状态失败:', error)
-    alert('操作失败，请重试')
+    toast.error('操作失败，请重试')
   } finally {
     verifying.value = null
   }

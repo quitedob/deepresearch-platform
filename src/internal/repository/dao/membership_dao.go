@@ -31,7 +31,7 @@ func (d *MembershipDAO) GetOrCreateMembership(ctx context.Context, userID string
 			chatLimit = quotaConfig.ChatLimit
 			researchLimit = quotaConfig.ResearchLimit
 		}
-		
+
 		membership = model.UserMembership{
 			UserID:           userID,
 			MembershipType:   model.MembershipFree,
@@ -45,7 +45,21 @@ func (d *MembershipDAO) GetOrCreateMembership(ctx context.Context, userID string
 		}
 		return &membership, nil
 	}
-	return &membership, err
+	if err != nil {
+		return nil, err
+	}
+
+	// 检查高级会员是否已过期，自动降级
+	if membership.MembershipType == model.MembershipPremium &&
+		membership.ExpiresAt != nil && time.Now().After(*membership.ExpiresAt) {
+		membership.MembershipType = model.MembershipFree
+		membership.ExpiresAt = nil
+		membership.NormalChatUsed = 0
+		membership.ResearchUsed = 0
+		d.db.WithContext(ctx).Save(&membership)
+	}
+
+	return &membership, nil
 }
 
 // GetMembershipByUserID 根据用户ID获取会员信息
@@ -263,12 +277,15 @@ func (d *MembershipDAO) UpgradeToPremium(ctx context.Context, userID string, val
 		membership.PremiumChatUsed = 0
 		membership.PremiumResearchUsed = 0
 
-		// 设置默认的高级会员配额
-		if membership.PremiumChatLimit == 0 {
-			membership.PremiumChatLimit = 1000
-		}
-		if membership.PremiumResearchLimit == 0 {
-			membership.PremiumResearchLimit = 50
+		// 从 quota_configs 表读取高级会员配额
+		var quotaConfig model.QuotaConfig
+		if err := tx.Where("membership_type = ?", "premium").First(&quotaConfig).Error; err == nil {
+			membership.PremiumChatLimit = quotaConfig.ChatLimit
+			membership.PremiumResearchLimit = quotaConfig.ResearchLimit
+		} else {
+			// 降级使用模型默认值
+			membership.PremiumChatLimit = 50
+			membership.PremiumResearchLimit = 10
 		}
 
 		return tx.Save(&membership).Error

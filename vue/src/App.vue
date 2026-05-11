@@ -26,11 +26,42 @@
                 @click="navigate"
                 class="nav-btn"
               >
-                <i class="nav-icon">💬</i>
+                <i class="nav-icon" aria-hidden="true">💬</i>
                 <span class="nav-label">对话</span>
               </button>
             </router-link>
-            <!-- 管理员功能已移除 -->
+            <router-link
+              to="/paper"
+              class="nav-item"
+              custom
+              v-slot="{ navigate, isActive }"
+            >
+              <button
+                :class="{ active: isActive }"
+                @click="navigate"
+                class="nav-btn"
+              >
+                <i class="nav-icon" aria-hidden="true">📄</i>
+                <span class="nav-label">论文</span>
+              </button>
+            </router-link>
+            <!-- 管理员入口：仅对 is_admin 用户显示 -->
+            <router-link
+              v-if="isAdmin"
+              to="/admin"
+              class="nav-item"
+              custom
+              v-slot="{ navigate, isActive }"
+            >
+              <button
+                :class="{ active: isActive }"
+                @click="navigate"
+                class="nav-btn"
+              >
+                <i class="nav-icon" aria-hidden="true">⚙️</i>
+                <span class="nav-label">管理</span>
+              </button>
+            </router-link>
           </nav>
         </div>
 
@@ -54,16 +85,32 @@
         :current-theme="chatStore.theme"
         @toggle-theme="chatStore.toggleTheme"
     />
+
+    <!-- 全局 Toast 通知 -->
+    <GlobalToast />
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, computed } from 'vue';
 import { useChatStore } from '@/store';
 import SettingsModal from '@/components/SettingsModal.vue';
 import UserProfileMenu from '@/components/UserProfileMenu.vue';
+import GlobalToast from '@/components/GlobalToast.vue';
 
 const chatStore = useChatStore();
+
+// 判断当前用户是否是管理员
+const isAdmin = computed(() => {
+  try {
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
+    if (!userStr) return false;
+    const user = JSON.parse(userStr);
+    return user.is_admin === true;
+  } catch {
+    return false;
+  }
+});
 
 // 组件挂载时，初始化主题
 onMounted(() => {

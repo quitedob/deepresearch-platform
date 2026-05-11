@@ -174,6 +174,7 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 import FileUpload from './FileUpload.vue';
+import toast from '@/utils/toast';
 
 const inputText = ref('');
 const textareaRef = ref(null);
@@ -294,9 +295,9 @@ const resumeTask = () => {
 };
 
 const cancelTask = () => {
+  if (!confirm('确定要取消当前研究任务吗？已完成的进度将丢失。')) return;
   showTaskProgress.value = false;
   taskProgress.value.status = 'cancelled';
-  // 这里应该调用API取消任务
   emit('research-error', '任务已取消');
 };
 
@@ -367,10 +368,10 @@ const handleMenuAction = (action) => {
     showFileUpload.value = true;
   } else if (action === 'add_from_drive') {
     // TODO: 实现云盘添加功能
-    alert('云盘添加功能正在开发中...');
+    toast.info('云盘添加功能正在开发中...');
   } else if (action === 'import_code') {
     // TODO: 实现代码导入功能
-    alert('代码导入功能正在开发中...');
+    toast.info('代码导入功能正在开发中...');
   }
 };
 
@@ -400,7 +401,7 @@ const handleFileUploadSuccess = (data) => {
 // 处理文件上传错误
 const handleFileUploadError = (error) => {
   console.error('文件上传失败:', error);
-  alert(`文件上传失败: ${error.message || error}`);
+  toast.error(`文件上传失败: ${error.message || error}`);
 };
 const handleClickOutsideAttachmentMenu = (event) => {
   if (plusMenuContainerRef.value && !plusMenuContainerRef.value.contains(event.target)) {

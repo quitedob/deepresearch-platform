@@ -49,6 +49,8 @@ import { getProviders } from '@/api/model';
 import { API_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDER, RESEARCH_CONFIG } from '@/utils/config';
 import { isWithinDays } from '@/utils/timeFormat';
 import { getAuthToken } from '@/utils/token';
+import toast from '@/utils/toast';
+import logger from '@/utils/logger';
 
 /**
  * 处理API错误，返回用户友好的错误信息
@@ -93,27 +95,6 @@ const saveDraft = (sessionId, content) => {
 };
 
 /**
- * 加载草稿
- */
-const loadDraft = (sessionId) => {
-  const key = `${DRAFT_STORAGE_KEY}_${sessionId || 'new'}`;
-  const saved = localStorage.getItem(key);
-  if (saved) {
-    try {
-      const draft = JSON.parse(saved);
-      // 草稿24小时内有效
-      if (isWithinDays(draft.timestamp, 1)) {
-        return draft.content;
-      }
-      localStorage.removeItem(key);
-    } catch (e) {
-      localStorage.removeItem(key);
-    }
-  }
-  return null;
-};
-
-/**
  * 清除草稿
  */
 const clearDraft = (sessionId) => {
@@ -126,11 +107,11 @@ const clearDraft = (sessionId) => {
 const canSendRequest = () => {
   const now = Date.now();
   if (isRequestPending.value) {
-    console.warn('[Home] 请求正在进行中，请稍候');
+    logger.warn('[Home] 请求正在进行中，请稍候');
     return false;
   }
   if (now - lastRequestTime.value < REQUEST_DEBOUNCE_MS) {
-    console.warn('[Home] 请求过于频繁，请稍候');
+    logger.warn('[Home] 请求过于频繁，请稍候');
     return false;
   }
   return true;
@@ -159,7 +140,7 @@ const validateMessageSession = (messageId, expectedSessionId) => {
   if (!message) return false;
   // 如果消息有sessionId属性，验证它
   if (message.sessionId && message.sessionId !== expectedSessionId) {
-    console.warn('[Home] 消息不属于当前会话');
+    logger.warn('[Home] 消息不属于当前会话');
     return false;
   }
   return true;
@@ -199,12 +180,12 @@ const checkContextLimit = async () => {
         return false; // 已处理，不继续发送
       }
     } else if (status.is_near_limit) {
-      console.log('⚠️ 上下文接近上限:', status.usage_percent.toFixed(1) + '%');
+      logger.log('⚠️ 上下文接近上限:', status.usage_percent.toFixed(1) + '%');
     }
     
     return true;
   } catch (error) {
-    console.error('检查上下文状态失败:', error);
+    logger.error('检查上下文状态失败:', error);
     return true; // 出错时允许继续
   }
 };
@@ -241,12 +222,12 @@ const handleSummarizeAndNew = async () => {
       // 切换到新会话
       await chatStore.switchSession(result.new_session_id);
       
-      alert(`✅ 已创建新对话！\n\n上一对话总结已保存到新对话的系统提示中。`);
+      toast.success('已创建新对话，上一对话总结已保存到新对话的系统提示中。');
     }
   } catch (error) {
-    console.error('总结并新建会话失败:', error);
+    logger.error('总结并新建会话失败:', error);
     const errorMsg = handleAPIError(error);
-    alert(`操作失败: ${errorMsg}`);
+    toast.error(`操作失败: ${errorMsg}`);
   } finally {
     chatStore.setTypingStatus(false);
   }
@@ -309,12 +290,12 @@ const handleSendDeepThink = async (text) => {
         provider = providerConfig.name;
       }
     } catch (apiError) {
-      console.warn('获取 provider 配置失败，使用默认值:', apiError);
+      logger.warn('获取 provider 配置失败，使用默认值:', apiError);
     }
     
     // 如果 API 获取失败，使用空值让后端处理
     if (!deepThinkModel) {
-      console.warn('未找到深度思考模型配置');
+      logger.warn('未找到深度思考模型配置');
     }
 
     // 如果没有活动会话，先创建一个
@@ -504,18 +485,18 @@ const handleSendResearch = async (text) => {
       eventSource.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('收到 SSE 事件:', data.type, '完整数据:', data);
+          logger.log('收到 SSE 事件:', data.type, '完整数据:', data);
 
           if (data.type === 'connected') {
-            console.log('✓ SSE 连接成功，等待后端推送...');
+            logger.log('✓ SSE 连接成功，等待后端推送...');
           }
           else if (data.type === 'heartbeat') {
             // 心跳事件，保持连接活跃，不需要处理
-            console.log('💓 收到心跳:', new Date(data.timestamp * 1000).toLocaleTimeString());
+            logger.log('💓 收到心跳:', new Date(data.timestamp * 1000).toLocaleTimeString());
           }
           else if (data.type === 'status_update') {
             const status = data.status;
-            console.log('状态更新:', status);
+            logger.log('状态更新:', status);
             
             if (status === 'in_progress') {
               const eventData = data.data || {};
@@ -561,12 +542,12 @@ const handleSendResearch = async (text) => {
             }
             // ✅ 处理 status_update 中的 completed 状态
             else if (status === 'completed') {
-              console.log('✓ 通过 status_update 收到完成通知');
+              logger.log('✓ 通过 status_update 收到完成通知');
               // 不关闭连接，等待 completed 事件推送完整报告
             }
           }
           else if (data.type === 'completed') {
-            console.log('✓ 研究完成，收到最终报告');
+            logger.log('✓ 研究完成，收到最终报告');
             eventSource.close();
             
             // ✅ 直接使用后端生成的完整报告文本
@@ -574,8 +555,8 @@ const handleSendResearch = async (text) => {
             const reportText = responseData?.report_text || '研究完成，但报告为空。';
             const metadata = responseData?.metadata || { type: 'research', session_id: responseData?.session_id };
             
-            console.log('报告长度:', reportText.length, '字符');
-            console.log('证据数量:', metadata.evidence?.length || 0);
+            logger.log('报告长度:', reportText.length, '字符');
+            logger.log('证据数量:', metadata.evidence?.length || 0);
             
             chatStore.updateMessageContent({
               messageId: assistantMessageId,
@@ -587,7 +568,7 @@ const handleSendResearch = async (text) => {
             chatStore.setResearchMode(false, null);
           }
           else if (data.type === 'failed' || data.type === 'error') {
-            console.error('✗ 研究失败:', data.error);
+            logger.error('✗ 研究失败:', data.error);
             eventSource.close();
             
             chatStore.updateMessageContent({
@@ -598,7 +579,7 @@ const handleSendResearch = async (text) => {
             chatStore.setResearchMode(false, null);
           }
         } catch (error) {
-          console.error('处理 SSE 事件失败:', error);
+          logger.error('处理 SSE 事件失败:', error);
         }
       };
 
@@ -611,12 +592,12 @@ const handleSendResearch = async (text) => {
       let activeEventSource = eventSource;
 
       eventSource.onerror = (error) => {
-        console.error('SSE 连接错误:', error);
+        logger.error('SSE 连接错误:', error);
         
         // 检查是否应该尝试重连
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && chatStore.isTyping) {
           reconnectAttempts++;
-          console.log(`⚠️ SSE 连接断开，尝试重连 (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+          logger.log(`⚠️ SSE 连接断开，尝试重连 (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
           
           chatStore.updateMessageContent({
             messageId: assistantMessageId,
@@ -657,7 +638,7 @@ const handleSendResearch = async (text) => {
 
       // ✅ 增加超时时间到 30 分钟，研究可能需要较长时间
       const timeoutId = setTimeout(() => {
-        console.warn('⚠️ 研究超时（30分钟）');
+        logger.warn('⚠️ 研究超时（30分钟）');
         cleanupEventSource();
         if (chatStore.isTyping) {
           chatStore.updateMessageContent({
@@ -791,7 +772,8 @@ const handleSendMessage = async (text, retryCount = 0) => {
       body: JSON.stringify({
         session_id: sessionId,
         message: text,
-        stream: true
+        stream: true,
+        model: chatStore.currentModel
       }),
       signal: controller.signal
     });
@@ -819,7 +801,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
           markRequestEnd();
           
           // 显示友好提示
-          alert(errorMessage);
+          toast.warning(errorMessage);
           return;
         }
       } catch (e) {
@@ -830,7 +812,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
 
     // 校验会话是否已切换
     if (chatStore.activeSessionId !== sessionId) {
-      console.warn('[Home] 会话已切换，忽略响应');
+      logger.warn('[Home] 会话已切换，忽略响应');
       return;
     }
 
@@ -850,7 +832,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
 
         // 再次校验会话
         if (chatStore.activeSessionId !== sessionId) {
-          console.warn('[Home] 会话已切换，停止处理流');
+          logger.warn('[Home] 会话已切换，停止处理流');
           break;
         }
 
@@ -905,7 +887,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
                 });
               } else if (data.type === 'start') {
                 // 流开始，可以用于UI状态更新
-                console.debug('[SSE] Stream started');
+                logger.debug('[SSE] Stream started');
               } else if (data.type === 'end') {
                 streamEnded = true;
                 continue;
@@ -925,7 +907,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
                 throw e;
               }
               // 记录解析错误但不中断流
-              console.warn('[SSE] Parse error:', e.message, 'Raw data:', dataStr);
+              logger.warn('[SSE] Parse error:', e.message, 'Raw data:', dataStr);
             }
           }
         }
@@ -950,7 +932,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
     chatStore.setCurrentRequestController(null);
     markRequestEnd();
     
-    console.log('[Home] 流式响应完成, streamEnded:', streamEnded);
+    logger.log('[Home] 流式响应完成, streamEnded:', streamEnded);
 
     // 刷新历史记录
     if (!chatStore.activeSessionId) {
@@ -974,7 +956,7 @@ const handleSendMessage = async (text, retryCount = 0) => {
     const hasPartialContent = assistantMsg && assistantMsg.content && assistantMsg.content.length > 0;
     
     if (isNetworkError(error) && retryCount < MAX_RETRIES && !hasPartialContent) {
-      console.log(`[Home] 网络错误，${retryCount + 1}/${MAX_RETRIES} 次重试...`);
+      logger.log(`[Home] 网络错误，${retryCount + 1}/${MAX_RETRIES} 次重试...`);
       chatStore.updateMessageContent({
         messageId: assistantMessageId,
         contentChunk: `网络错误，正在重试 (${retryCount + 1}/${MAX_RETRIES})...`
@@ -1039,13 +1021,13 @@ const isNetworkError = (error) => {
 const handleEditAndSend = ({ messageId, newContent }) => {
   // 防抖检查
   if (!canSendRequest()) {
-    console.warn('[Home] 请求过于频繁');
+    logger.warn('[Home] 请求过于频繁');
     return;
   }
 
   const messageIndex = chatStore.messages.findIndex(m => m.id === messageId);
   if (messageIndex === -1) {
-    console.warn('[Home] 消息不存在');
+    logger.warn('[Home] 消息不存在');
     return;
   }
 
@@ -1055,7 +1037,7 @@ const handleEditAndSend = ({ messageId, newContent }) => {
   // 验证消息是否属于当前会话
   const message = chatStore.messages[messageIndex];
   if (message.sessionId && message.sessionId !== currentSessionId) {
-    console.warn('[Home] 消息不属于当前会话，取消编辑操作');
+    logger.warn('[Home] 消息不属于当前会话，取消编辑操作');
     return;
   }
   
@@ -1065,7 +1047,7 @@ const handleEditAndSend = ({ messageId, newContent }) => {
   
   // 再次校验会话是否已切换
   if (chatStore.activeSessionId !== currentSessionId) {
-    console.warn('[Home] 会话已切换，取消编辑操作');
+    logger.warn('[Home] 会话已切换，取消编辑操作');
     return;
   }
   
@@ -1082,20 +1064,20 @@ const handleEditAndSend = ({ messageId, newContent }) => {
 const handleRegenerate = (assistantMessage) => {
   // 防抖检查
   if (!canSendRequest()) {
-    console.warn('[Home] 请求过于频繁');
+    logger.warn('[Home] 请求过于频繁');
     return;
   }
 
   const messageIndex = chatStore.messages.findIndex(m => m.id === assistantMessage.id);
   // Ensure there is a user message before the assistant message
   if (messageIndex < 1) {
-    console.warn('[Home] 无法找到对应的用户消息');
+    logger.warn('[Home] 无法找到对应的用户消息');
     return;
   }
 
   const userMessage = chatStore.messages[messageIndex - 1];
   if (userMessage.role !== 'user') {
-    console.warn('[Home] 前一条消息不是用户消息');
+    logger.warn('[Home] 前一条消息不是用户消息');
     return;
   }
 
@@ -1104,7 +1086,7 @@ const handleRegenerate = (assistantMessage) => {
   
   // 验证消息是否属于当前会话
   if (assistantMessage.sessionId && assistantMessage.sessionId !== currentSessionId) {
-    console.warn('[Home] 消息不属于当前会话，取消重新生成操作');
+    logger.warn('[Home] 消息不属于当前会话，取消重新生成操作');
     return;
   }
   
@@ -1114,7 +1096,7 @@ const handleRegenerate = (assistantMessage) => {
   
   // 再次校验会话是否已切换
   if (chatStore.activeSessionId !== currentSessionId) {
-    console.warn('[Home] 会话已切换，取消重新生成操作');
+    logger.warn('[Home] 会话已切换，取消重新生成操作');
     return;
   }
   
@@ -1135,7 +1117,7 @@ const stopGeneration = () => {
 <style scoped>
 .home-layout {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background: var(--primary-bg);
 }

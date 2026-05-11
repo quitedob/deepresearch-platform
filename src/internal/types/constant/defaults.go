@@ -38,6 +38,7 @@ var ProviderDescriptions = map[string]string{
 	ProviderOllama:     "Ollama - 本地部署的开源大语言模型",
 	ProviderOpenAI:     "OpenAI兼容 - GLM Coding Plan",
 	ProviderOpenRouter: "OpenRouter - 统一API访问400+模型",
+	ProviderMiniMax:    "MiniMax - 深度推理模型",
 }
 
 // Provider icons
@@ -47,4 +48,5 @@ var ProviderIcons = map[string]string{
 	ProviderOllama:     "🦙",
 	ProviderOpenAI:     "🔮",
 	ProviderOpenRouter: "🌐",
+	ProviderMiniMax:    "⚡",
 }

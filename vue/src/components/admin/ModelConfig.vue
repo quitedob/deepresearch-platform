@@ -118,6 +118,7 @@ import { ref, computed, onMounted } from 'vue'
 import { getProviderConfigs, updateProviderConfig, getModelConfigs, updateModelConfig, batchUpdateModelConfigs, updateAIQuestionConfigAPI, testModel, syncModelsToDatabase } from '@/api/admin'
 import { aiQuestionAPI } from '@/api/index'
 import { getProviders, clearProvidersCache } from '@/api/model'
+import toast from '@/utils/toast'
 
 const providers = ref([])
 const models = ref([])
@@ -280,7 +281,7 @@ const enableAllModels = async () => {
       }))
     
     if (configs.length === 0) {
-      alert('所有模型已启用')
+      toast.info('所有模型已启用')
       return
     }
     
@@ -291,7 +292,7 @@ const enableAllModels = async () => {
     models.value.forEach(m => m.is_enabled = true)
     clearProvidersCache()
     notifyModelConfigUpdated()
-    alert(`已启用 ${configs.length} 个模型`)
+    toast.success(`已启用 ${configs.length} 个模型`)
   } catch (error) {
     handleAPIError(error, '批量启用模型')
   } finally {
@@ -313,7 +314,7 @@ const disableAllModels = async () => {
       }))
     
     if (configs.length === 0) {
-      alert('所有模型已禁用')
+      toast.info('所有模型已禁用')
       return
     }
     
@@ -324,7 +325,7 @@ const disableAllModels = async () => {
     models.value.forEach(m => m.is_enabled = false)
     clearProvidersCache()
     notifyModelConfigUpdated()
-    alert(`已禁用 ${configs.length} 个模型`)
+    toast.success(`已禁用 ${configs.length} 个模型`)
   } catch (error) {
     handleAPIError(error, '批量禁用模型')
   } finally {
@@ -409,7 +410,7 @@ const syncModels = async () => {
   loading.value = true
   try {
     const response = await syncModelsToDatabase()
-    alert(`同步完成！新增 ${response.added_count} 个模型`)
+    toast.success(`同步完成！新增 ${response.added_count} 个模型`)
     await refreshAll()
   } catch (error) {
     handleAPIError(error, '同步模型')
@@ -425,7 +426,7 @@ const handleAPIError = (error, context) => {
     const apiError = error.response.data.error
     message = apiError.message || message
   }
-  alert(message)
+  toast.error(message)
 }
 
 onMounted(() => {

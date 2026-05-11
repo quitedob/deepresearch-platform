@@ -67,6 +67,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { listNotifications, createNotification as createNotificationAPI, deleteNotification as deleteNotificationAPI } from '@/api/admin'
+import toast from '@/utils/toast'
 
 const notifications = ref([])
 const total = ref(0)
@@ -121,7 +122,7 @@ const nextPage = () => {
 
 const createNotification = async () => {
   if (!createForm.value.title || !createForm.value.content) {
-    alert('请填写标题和内容')
+    toast.warning('请填写标题和内容')
     return
   }
   try {
@@ -134,10 +135,10 @@ const createNotification = async () => {
     showCreateModal.value = false
     createForm.value = { type: 'system', title: '', content: '', isGlobal: true }
     loadNotifications()
-    alert('通知已发送')
+    toast.success('通知已发送')
   } catch (error) {
     console.error('发送通知失败:', error)
-    alert('发送失败')
+    toast.error('发送失败')
   }
 }
 

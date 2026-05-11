@@ -22,6 +22,10 @@ providers:
     display_name: "OpenRouter"
     enabled: true
     sort_order: 5
+  minimax:
+    display_name: "MiniMax"
+    enabled: true
+    sort_order: 6
 
 models:
   # DeepSeek 模型
@@ -181,6 +185,22 @@ models:
     enabled: true
     sort_order: 1
 
+  # MiniMax 模型
+  MiniMax-M2.7:
+    provider: minimax
+    display_name: "MiniMax-M2.7"
+    description: "MiniMax 深度推理模型"
+    context_length: 1000000
+    max_tokens: 8192
+    capabilities:
+      - streaming
+      - tools
+      - reasoning
+      - json_output
+    is_deep_thinking: true
+    enabled: true
+    sort_order: 1
+
 # 深度思考模型映射
 deep_thinking_models:
   deepseek: deepseek-reasoner
@@ -188,3 +208,4 @@ deep_thinking_models:
   openai: GLM-5
   ollama: gemma3:12b
   openrouter: moonshotai/kimi-k2:free
+  minimax: MiniMax-M2.7

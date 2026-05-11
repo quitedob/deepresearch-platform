@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ai-research-platform/internal/repository/dao"
@@ -21,12 +22,9 @@ type PaperAPI struct {
 	modelConfigDAO *dao.ModelConfigDAO
 }
 
-// NewPaperAPI 创建论文API
+// NewPaperAPI 创建论文API（Deprecated: 使用 NewPaperAPIWithDAO）
 func NewPaperAPI(paperDAO *dao.PaperDAO, paperService *service.PaperService) *PaperAPI {
-	return &PaperAPI{
-		paperDAO:     paperDAO,
-		paperService: paperService,
-	}
+	return NewPaperAPIWithDAO(paperDAO, paperService, nil)
 }
 
 // NewPaperAPIWithDAO 创建带模型配置DAO的论文API
@@ -233,6 +231,25 @@ func (api *PaperAPI) GetPaperResult(c *gin.Context) {
 	})
 }
 
+// PreviewPaper 预览论文内容（返回文本，不触发下载）
+// GET /api/v1/paper/preview/:id?format=markdown|latex
+func (api *PaperAPI) PreviewPaper(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "未登录"})
+		return
+	}
+	sessionID := c.Param("id")
+	format := c.DefaultQuery("format", "markdown")
+
+	content, _, err := api.paperService.ExportPaper(c.Request.Context(), sessionID, userID, format)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"content": content, "format": format}})
+}
+
 // ExportPaper 导出论文
 // GET /api/v1/paper/export/:id
 func (api *PaperAPI) ExportPaper(c *gin.Context) {
@@ -256,15 +273,17 @@ func (api *PaperAPI) ExportPaper(c *gin.Context) {
 		return
 	}
 
-	// 获取论文标题用作文件名
+	// 获取论文标题用作文件名，sanitize 特殊字符防止 header 注入
 	statusData, _ := api.paperService.GetPaperStatus(c.Request.Context(), sessionID, userID)
 	fileName := "paper"
-	if statusData != nil {
-		fileName = statusData.Title
+	if statusData != nil && statusData.Title != "" {
+		fileName = sanitizeFileName(statusData.Title)
 	}
 
 	ext := ".md"
-	if format == "docx" {
+	if format == "latex" || format == "tex" {
+		ext = ".tex"
+	} else if format == "docx" {
 		ext = ".docx"
 	}
 
@@ -350,6 +369,34 @@ func (api *PaperAPI) RegenerateChapter(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "章节重新生成已开始"})
 }
 
+// UpdateChapter 手动更新章节内容
+// PATCH /api/v1/paper/chapter/:id
+func (api *PaperAPI) UpdateChapter(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "未登录"})
+		return
+	}
+
+	chapterID := c.Param("id")
+
+	var req struct {
+		PaperID string `json:"paper_id" binding:"required"`
+		Content string `json:"content" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "参数无效"})
+		return
+	}
+
+	if err := api.paperService.UpdateChapterContent(c.Request.Context(), req.PaperID, chapterID, userID, req.Content); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 // GetTemplates 获取论文模板列表
 // GET /api/v1/paper/templates
 func (api *PaperAPI) GetTemplates(c *gin.Context) {
@@ -372,3 +419,28 @@ func (api *PaperAPI) GetCitationStyles(c *gin.Context) {
 
 // Ensure io import is used (for streaming)
 var _ = io.EOF
+
+// sanitizeFileName 清理文件名中的特殊字符，防止 Content-Disposition header 注入
+func sanitizeFileName(name string) string {
+	var sb strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			sb.WriteRune(r)
+		case r == '-' || r == '_' || r == ' ':
+			sb.WriteRune('_')
+		case r > 0x7F: // 保留中文等多字节字符
+			sb.WriteRune(r)
+		default:
+			// 跳过 " ; \ / : * ? < > | 等危险字符
+		}
+	}
+	result := sb.String()
+	if len(result) == 0 {
+		return "paper"
+	}
+	if len(result) > 100 {
+		result = result[:100]
+	}
+	return result
+}

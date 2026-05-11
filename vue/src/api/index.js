@@ -26,15 +26,23 @@ apiClient.interceptors.request.use(
 // 响应拦截器
 apiClient.interceptors.response.use(
   (response) => {
-    // 处理新的统一响应格式
+    // 处理统一响应格式 {code, message, data}
     const data = response.data
-    // 如果响应包含success字段且为false，抛出错误
+    // 支持两种错误格式：
+    // 1. 旧格式: {success: false, error: {message}}
+    // 2. 新格式: {code: !0, message: "..."}
     if (data && data.success === false && data.error) {
       const error = new Error(data.error.message || '请求失败')
       error.response = { data, status: response.status }
       return Promise.reject(error)
     }
-    // 返回data字段或整个响应
+    // 后端统一格式：code !== 0 表示业务错误
+    if (data && typeof data.code === 'number' && data.code !== 0) {
+      const error = new Error(data.message || '请求失败')
+      error.response = { data, status: response.status }
+      return Promise.reject(error)
+    }
+    // 返回 data 字段（已解包一层）
     return data.data !== undefined ? data.data : data
   },
   (error) => {
@@ -63,24 +71,22 @@ apiClient.interceptors.response.use(
     
     // 处理401错误
     if (error.response?.status === 401) {
-      const errorCode = error.response?.data?.error?.code || error.response?.data?.code
-      // 只有在token相关错误时才跳转登录（排除登录失败的情况）
-      // 登录失败时 message 会是 "用户名或密码错误" 或 "账户已被禁用"
-      const isLoginError = errorMessage.includes('密码') || errorMessage.includes('禁用') || errorMessage.includes('账户')
-      // 检查是否是 token 过期/无效的错误
-      const isTokenError = errorCode === 'ERR_TOKEN_EXPIRED' || 
-                          errorCode === 'ERR_TOKEN_INVALID' ||
-                          errorCode === 'ERR_UNAUTHORIZED' ||
-                          errorMessage.includes('expired') ||
-                          errorMessage.includes('invalid') ||
-                          errorMessage.includes('过期') ||
-                          errorMessage.includes('无效')
+      const data = error.response?.data || {}
+      // 提取错误码（兼容多种格式）
+      const errorCode = data?.error?.code || data?.code || ''
+      // 判断是否是登录页面的认证失败（密码错误），而非 token 失效或账户被禁用
+      const isLoginPageError = errorMessage.includes('密码') && window.location.pathname.includes('/login')
       
-      if (!isLoginError && isTokenError) {
+      if (!isLoginPageError) {
+        // P1 修复：被禁用用户也需要清除 token 并跳转登录
+        // 区别：禁用用户跳转时携带提示信息，而非静默跳转
         clearTokens()
-        // 避免在登录页面重复跳转
         if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
+          const isBanned = errorMessage.includes('禁用') || errorMessage.includes('账户')
+          const redirectUrl = isBanned
+            ? `/login?reason=banned&msg=${encodeURIComponent(errorMessage)}`
+            : '/login'
+          window.location.href = redirectUrl
         }
       }
     }
@@ -116,6 +122,11 @@ export const chatAPI = {
     return apiClient.delete(`/chat/sessions/${sessionId}`)
   },
 
+  // 批量删除聊天会话
+  batchDeleteSessions(sessionIds) {
+    return apiClient.post('/chat/sessions/batch-delete', { session_ids: sessionIds })
+  },
+
   // 获取会话消息列表
   getMessages(sessionId, limit = 50, offset = 0) {
     return apiClient.get(`/chat/sessions/${sessionId}/messages`, { params: { limit, offset } })
@@ -144,7 +155,7 @@ export const chatAPI = {
 
   // 总结并创建新会话
   summarizeAndNewSession(sessionId) {
-    return apiClient.post(`/chat/sessions/${sessionId}/summarize-new`)
+    return apiClient.post(`/chat/sessions/${sessionId}/summarize-and-new`)
   }
 }
 

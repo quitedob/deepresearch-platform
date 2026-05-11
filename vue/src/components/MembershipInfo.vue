@@ -58,6 +58,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { getMembership, getQuota, activateCode } from '@/api/membership'
 import { daysUntilExpiry } from '@/utils/timeFormat'
+import toast from '@/utils/toast'
 
 const membership = ref({ membership_type: 'free' })
 const quota = ref({ chat_remaining: 0, chat_limit: 10, research_remaining: 0, research_limit: 1 })
@@ -107,19 +108,19 @@ const formatTime = (dateStr) => {
 
 const activate = async () => {
   if (!activationCode.value) {
-    alert('请输入激活码')
+    toast.warning('请输入激活码')
     return
   }
   try {
     await activateCode(activationCode.value)
-    alert('激活成功！')
+    toast.success('激活成功！')
     showActivateModal.value = false
     activationCode.value = ''
     loadMembership()
     loadQuota()
   } catch (error) {
     console.error('激活失败:', error)
-    alert('激活码无效或已过期')
+    toast.error('激活码无效或已过期')
   }
 }
 

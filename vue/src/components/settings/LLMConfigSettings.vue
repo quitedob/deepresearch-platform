@@ -41,6 +41,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { getProviders } from '@/api/model';
+import toast from '@/utils/toast';
 
 const loading = ref(false);
 const providers = ref([]);
@@ -93,7 +94,7 @@ const loadProviders = async () => {
 const saveSettings = () => {
   localStorage.setItem('defaultProvider', defaultProvider.value);
   localStorage.setItem('defaultModel', defaultModel.value);
-  alert('设置已保存');
+  toast.success('设置已保存');
 };
 
 onMounted(() => {

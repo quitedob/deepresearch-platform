@@ -3,7 +3,7 @@ package handler
 import (
 	"time"
 
-	"github.com/ai-research-platform/internal/auth"
+	"github.com/ai-research-platform/internal/pkg/auth"
 	"github.com/ai-research-platform/internal/cache"
 	"github.com/ai-research-platform/internal/pkg/eino"
 	"github.com/ai-research-platform/internal/middleware"
@@ -88,7 +88,7 @@ func SetupRouter(
 
 	// API v1 路由（需要认证）
 	v1 := router.Group("/api/v1")
-	v1.Use(middleware.AuthMiddleware(jwtManager))
+	v1.Use(middleware.AuthWithJWT(jwtManager))
 	v1.Use(rateLimiter.RateLimitMiddleware())
 
 	// 聊天处理器

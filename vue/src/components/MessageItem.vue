@@ -99,7 +99,7 @@
         </div>
       </div>
 
-      <div class="message-actions" v-if="!isThinking">
+      <div class="message-actions">
         <!-- Timer Display -->
         <div v-if="message.role === 'assistant' && message.duration" class="timer-display">
           <span>{{ message.duration }}s</span>
@@ -142,7 +142,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
           </button>
         </template>
-        <button v-if="message.role === 'assistant'" @click="emit('regenerate', message)" title="重新生成">
+        <button v-if="message.role === 'assistant'" @click="emit('regenerate', message)" :title="`重新生成 (使用当前选择的模型)`">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
         </button>
 
@@ -328,6 +328,7 @@ import markdownit from 'markdown-it';
 // import { feedbackAPI } from '@/services/api.js';
 import hljs from 'highlight.js';
 import EvidenceChain from '@/components/EvidenceChain.vue';
+import toast from '@/utils/toast';
 
 const props = defineProps({
   message: { type: Object, required: true },
@@ -500,6 +501,7 @@ const copyContent = async () => {
   const text = props.message.content;
   try {
     await navigator.clipboard.writeText(text);
+    toast.success('已复制到剪贴板');
   } catch (err) {
     // Clipboard API 不可用时使用 execCommand fallback
     try {
@@ -511,8 +513,10 @@ const copyContent = async () => {
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
+      toast.success('已复制到剪贴板');
     } catch (fallbackErr) {
       console.error('Failed to copy: ', fallbackErr);
+      toast.error('复制失败');
     }
   }
 };
@@ -526,15 +530,13 @@ const submitFeedback = async (rating) => {
 
     // 如果已经提交了相同的反馈，则取消反馈
     if (localFeedback.value === rating) {
-      // await feedbackAPI.deleteFeedback(props.message.id);
       localFeedback.value = null;
-      console.log('反馈功能暂时禁用');
       return;
     }
 
-    // 提交反馈 - 暂时禁用，等待后端实现
-    console.log('反馈功能暂时禁用，rating:', rating);
+    // 暂时仅本地记录，等待后端实现
     localFeedback.value = rating;
+    toast.success('感谢您的反馈');
 
   } catch (error) {
     console.error('反馈提交失败:', error);
@@ -545,45 +547,12 @@ const submitFeedback = async (rating) => {
 
 // 删除反馈方法
 const deleteFeedback = async () => {
-  console.log('反馈功能暂时禁用');
+  localFeedback.value = null;
 };
 
-// 初始化时加载已有的反馈状态
+// 初始化时加载已有的反馈状态（暂时跳过，等待后端实现）
 const loadExistingFeedback = async () => {
-  try {
-    // 反馈功能暂时禁用
-    // const data = await feedbackAPI.getMessageFeedback(props.message.id);
-    return;
-
-    // API 返回当前用户的反馈信息
-    if (data.total_feedbacks > 0) {
-      // 检查是否有当前用户的反馈
-      if (data.feedbacks && data.feedbacks.length > 0) {
-        // 找到当前用户的反馈（API应该返回当前用户的反馈在最前面）
-        const userFeedback = data.feedbacks.find(f => f.user_id === getCurrentUserId());
-        if (userFeedback) {
-          localFeedback.value = userFeedback.rating;
-        } else {
-          // 如果找不到当前用户的反馈，使用第一个反馈作为默认
-          localFeedback.value = data.feedbacks[0].rating;
-        }
-      } else {
-        // 兼容旧格式：如果有正面反馈，设置为点赞；如果有负面反馈，设置为点踩
-        if (data.positive_feedbacks > 0) {
-          localFeedback.value = 1;
-        } else if (data.negative_feedbacks > 0) {
-          localFeedback.value = -1;
-        } else {
-          localFeedback.value = null;
-        }
-      }
-    } else {
-      localFeedback.value = null;
-    }
-  } catch (error) {
-    console.warn('加载已有反馈失败:', error);
-    localFeedback.value = null;
-  }
+  // 后端反馈API尚未实现，跳过加载
 };
 
 // 获取当前用户ID的辅助函数
@@ -609,11 +578,7 @@ onMounted(() => {
 
 // 举报相关方法
 const showReportDialog = () => {
-  showReportModal.value = true;
-  reportForm.value = {
-    reason: '',
-    description: ''
-  };
+  toast.info('举报功能正在开发中，敬请期待');
 };
 
 const hideReportDialog = () => {
@@ -659,13 +624,13 @@ const submitReport = async () => {
     console.log('举报提交成功:', result);
 
     // 可以添加一个简单的提示消息
-    alert('举报已提交，我们会尽快处理。');
+    toast.success('举报已提交，我们会尽快处理。');
 
     hideReportDialog();
 
   } catch (error) {
     console.error('举报提交失败:', error);
-    alert(`举报提交失败: ${error.message}`);
+    toast.error(`举报提交失败: ${error.message}`);
   } finally {
     reportSubmitting.value = false;
   }
@@ -701,12 +666,7 @@ const formatContentWithCitations = (content) => {
 
 // 分享相关方法
 const showShareDialog = () => {
-  showShareModal.value = true;
-  shareForm.value = {
-    title: '',
-    description: '',
-    expireDays: 30
-  };
+  toast.info('分享功能正在开发中，敬请期待');
 };
 
 const hideShareDialog = () => {
@@ -757,7 +717,7 @@ const createShare = async () => {
 
   } catch (error) {
     console.error('创建分享链接失败:', error);
-    alert(`创建分享链接失败: ${error.message}`);
+    toast.error(`创建分享链接失败: ${error.message}`);
   } finally {
     shareSubmitting.value = false;
   }
@@ -799,7 +759,7 @@ const copyShareLink = async () => {
     console.log('分享链接已复制到剪贴板');
   } catch (err) {
     console.error('复制失败: ', err);
-    alert('复制失败，请手动复制链接');
+    toast.error('复制失败，请手动复制链接');
   }
 };
 
@@ -894,12 +854,11 @@ const formatShareExpiry = (expiryString) => {
   align-items: center; /* Vertically align items */
   gap: 8px;
   margin-top: 8px;
-  visibility: hidden;
-  opacity: 0;
-  transition: visibility 0s, opacity 0.2s linear;
-  height: 24px; /* Give a fixed height */
+  /* 按钮始终可见，移除 hover 依赖 */
+  min-height: 36px; /* 确保移动端有足够空间 */
+  height: auto; /* 自适应高度 */
 }
-.message-wrapper:hover .message-actions { visibility: visible; opacity: 1; }
+.message-wrapper:hover .message-actions { } /* 保留空规则避免破坏现有选择器 */
 .message-actions button { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center; }
 .message-actions button:hover { background-color: var(--hover-bg); color: var(--text-primary); }
 .user .message-actions button { color: #a0bdf6; }

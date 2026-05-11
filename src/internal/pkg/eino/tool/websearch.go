@@ -106,7 +106,7 @@ func (t *WebSearchTool) InvokableRun(ctx context.Context, argumentsInJSON string
 func (t *WebSearchTool) searchZhipu(ctx context.Context, query string) (string, error) {
 	// 使用 web_search 工具进行搜索
 	reqBody := map[string]interface{}{
-		"model": "glm-4-flash",
+		"model": "glm-4.5-air",
 		"messages": []map[string]string{
 			{"role": "user", "content": fmt.Sprintf("请搜索并总结关于以下主题的最新信息：%s", query)},
 		},

@@ -135,6 +135,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { uploadSingleFile, uploadMultipleFiles } from '@/services/api.js'
+import toast from '@/utils/toast'
 
 // Props
 const props = defineProps({
@@ -209,7 +210,7 @@ const handleDrop = (event) => {
 const addFiles = (newFiles) => {
   // 检查文件数量限制
   if (files.value.length + newFiles.length > props.maxFiles) {
-    alert(`最多只能选择 ${props.maxFiles} 个文件`)
+    toast.warning(`最多只能选择 ${props.maxFiles} 个文件`)
     return
   }
 
@@ -221,7 +222,7 @@ const addFiles = (newFiles) => {
     const isValidType = acceptedExtensions.some(ext => fileName.endsWith(ext.replace('.', '')))
     
     if (!isValidType) {
-      alert(`不支持的文件类型: ${file.name}`)
+      toast.warning(`不支持的文件类型: ${file.name}`)
       return false
     }
 
@@ -230,7 +231,7 @@ const addFiles = (newFiles) => {
     const maxSize = isImage ? 10 * 1024 * 1024 : 50 * 1024 * 1024 // 10MB for images, 50MB for text
     
     if (file.size > maxSize) {
-      alert(`文件过大: ${file.name} (最大 ${isImage ? '10MB' : '50MB'})`)
+      toast.warning(`文件过大: ${file.name} (最大 ${isImage ? '10MB' : '50MB'})`)
       return false
     }
 

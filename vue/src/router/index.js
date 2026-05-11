@@ -1,4 +1,3 @@
-// src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router';
 import Home from '@/views/Home.vue'; // 引入主页视图组件
 import Homepage from '@/views/Homepage.vue'; // 引入酷炫主页组件
@@ -9,6 +8,10 @@ import Login from '@/views/Login.vue'; // 3. 引入登录页面
 import Register from '@/views/Register.vue'; // 4. 引入注册页面
 import Admin from '@/views/Admin.vue'; // 5. 引入管理员页面
 import AISpace from '@/views/AISpace.vue'; // 6. 引入AI空间页面
+import PaperList from '@/views/PaperList.vue';
+import PaperGenerate from '@/views/PaperGenerate.vue';
+import PaperProgress from '@/views/PaperProgress.vue';
+import PaperView from '@/views/PaperView.vue';
 
 const routes = [
     {
@@ -68,6 +71,37 @@ const routes = [
         name: 'AISpace',
         component: AISpace,
         meta: { requiresAuth: true }
+    },
+    // 论文功能
+    {
+        path: '/paper',
+        name: 'PaperList',
+        component: PaperList,
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/paper/generate',
+        name: 'PaperGenerate',
+        component: PaperGenerate,
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/paper/:id/progress',
+        name: 'PaperProgress',
+        component: PaperProgress,
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/paper/:id',
+        name: 'PaperView',
+        component: PaperView,
+        meta: { requiresAuth: true }
+    },
+    // 404 兜底路由
+    {
+        path: '/:pathMatch(.*)*',
+        name: 'NotFound',
+        component: () => import('@/views/NotFound.vue')
     }
 ];
 
@@ -131,7 +165,10 @@ router.beforeEach((to) => {
             const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
             if (userStr) {
                 const user = JSON.parse(userStr);
-                if (user.role !== 'admin') {
+                // 后端返回 is_admin: true（布尔值），而非 role: 'admin'
+                // 注意：这里仅做快速本地检查，实际权限由后端 API 验证
+                // 如果 is_admin 字段不存在（旧缓存），允许通过并由后端决定
+                if (user.is_admin === false) {
                     return { path: '/home', query: { error: 'access_denied' } };
                 }
             } else {

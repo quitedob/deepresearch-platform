@@ -97,6 +97,7 @@
 <script setup>
 import { ref, computed, onErrorCaptured, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import toast from '@/utils/toast'
 
 const router = useRouter()
 
@@ -319,11 +320,11 @@ const submitReport = async () => {
     await new Promise(resolve => setTimeout(resolve, 1500))
 
     console.log('Error report submitted:', reportData)
-    alert('错误报告已提交，我们会尽快处理！')
+    toast.success('错误报告已提交，我们会尽快处理！')
     closeReportModal()
   } catch (err) {
     console.error('Failed to submit error report:', err)
-    alert('提交失败，请稍后重试。')
+    toast.error('提交失败，请稍后重试。')
   } finally {
     submitting.value = false
   }

@@ -64,6 +64,7 @@ type SubAgentResult = agent.SubAgentResult
 // ToolsConfig 工具配置
 type ToolsConfig struct {
 	WebSearchAPIKey    string
+	MiniMaxAPIKey      string                              // MiniMax API Key（用于 MiniMax 网络搜索）
 	ArxivMaxResults    int
 	WikipediaLanguage  string
 	Timeout            time.Duration
@@ -72,6 +73,7 @@ type ToolsConfig struct {
 	EnableZRead        bool                              // 启用 ZRead MCP（开源仓库读取）
 	EnableWebReader    bool                              // 启用 Web Reader MCP（网页读取）
 	EnableSearchPrime  bool                              // 启用 Web Search Prime MCP（增强搜索）
+	EnableMiniMax      bool                              // 启用 MiniMax 网络搜索（替换智谱 web_search）
 }
 
 // DefaultToolsConfig 返回默认工具配置
@@ -79,6 +81,7 @@ type ToolsConfig struct {
 func DefaultToolsConfig() ToolsConfig {
 	return ToolsConfig{
 		WebSearchAPIKey:    "", // 需要从外部传入
+		MiniMaxAPIKey:      "", // 需要从外部传入
 		ArxivMaxResults:    10,
 		WikipediaLanguage:  "zh",
 		Timeout:            900 * time.Second, // 从30秒提升到90秒，避免联网搜索+LLM生成链路超时
@@ -86,6 +89,7 @@ func DefaultToolsConfig() ToolsConfig {
 		EnableZRead:        true,  // 默认启用 ZRead MCP
 		EnableWebReader:    true,  // 默认启用 Web Reader MCP
 		EnableSearchPrime:  true,  // 默认启用 Web Search Prime MCP
+		EnableMiniMax:      false, // 默认关闭 MiniMax（使用智谱 web_search）
 	}
 }
 
@@ -111,11 +115,21 @@ func NewParallelOrchestrator(chatModel ChatModel, tools []InvokableTool, config 
 func CreateResearchTools(config ToolsConfig) []InvokableTool {
 	tools := make([]InvokableTool, 0, 6)
 
-	// Web Search
-	webSearch := einotool.NewWebSearchTool(einotool.WebSearchConfig{
-		APIKey:  config.WebSearchAPIKey,
-		Timeout: config.Timeout,
-	})
+	// Web Search - 根据配置选择 MiniMax 或智谱
+	var webSearch InvokableTool
+	if config.EnableMiniMax && config.MiniMaxAPIKey != "" {
+		// 使用 MiniMax 网络搜索（直接调用 REST API）
+		webSearch = einotool.NewMiniMaxWebSearchTool(einotool.MiniMaxWebSearchConfig{
+			APIKey:  config.MiniMaxAPIKey,
+			Timeout: config.Timeout,
+		})
+	} else {
+		// 使用智谱网络搜索（默认）
+		webSearch = einotool.NewWebSearchTool(einotool.WebSearchConfig{
+			APIKey:  config.WebSearchAPIKey,
+			Timeout: config.Timeout,
+		})
+	}
 
 	// ArXiv
 	arxiv := einotool.NewArxivTool(einotool.ArxivConfig{
@@ -195,6 +209,15 @@ func CreateResearchTools(config ToolsConfig) []InvokableTool {
 // apiKey 必须传入，不能为空
 func CreateWebSearchTool(apiKey string) InvokableTool {
 	return einotool.NewWebSearchTool(einotool.WebSearchConfig{
+		APIKey:  apiKey,
+		Timeout: 90 * time.Second,
+	})
+}
+
+// CreateMiniMaxWebSearchTool 创建 MiniMax 网络搜索工具（直接调用 REST API）
+// apiKey 必须传入，不能为空
+func CreateMiniMaxWebSearchTool(apiKey string) InvokableTool {
+	return einotool.NewMiniMaxWebSearchTool(einotool.MiniMaxWebSearchConfig{
 		APIKey:  apiKey,
 		Timeout: 90 * time.Second,
 	})
@@ -336,7 +359,11 @@ func (s *LLMScheduler) GetRegisteredProviders() []string {
 func (s *LLMScheduler) ExecuteWithFallback(ctx context.Context, messages []*Message, model string) (*Message, error) {
 	providerName, ok := s.models[model]
 	if !ok {
-		return nil, fmt.Errorf("model not supported: %s", model)
+		available := make([]string, 0, len(s.models))
+		for m := range s.models {
+			available = append(available, m)
+		}
+		return nil, fmt.Errorf("模型 %q 未注册（已注册模型: %v）。请检查配置文件中 API Key 是否正确", model, available)
 	}
 
 	provider, ok := s.providers[providerName]
@@ -392,7 +419,11 @@ func (r *StreamReader) Recv() (*StreamResponse, error) {
 func (s *LLMScheduler) StreamWithFallback(ctx context.Context, messages []*Message, model string) (*StreamReader, string, error) {
 	providerName, ok := s.models[model]
 	if !ok {
-		return nil, "", fmt.Errorf("model not supported: %s", model)
+		available := make([]string, 0, len(s.models))
+		for m := range s.models {
+			available = append(available, m)
+		}
+		return nil, "", fmt.Errorf("模型 %q 未注册（已注册模型: %v）。请检查配置文件中 API Key 是否正确", model, available)
 	}
 
 	provider, ok := s.providers[providerName]

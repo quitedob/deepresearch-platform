@@ -146,15 +146,20 @@ const loadMembershipInfo = async () => {
   try {
     // 获取会员信息
     const membershipData = await membershipAPI.getMembership();
-    isPremium.value = membershipData.is_premium || false;
-    membershipExpiry.value = membershipData.expires_at;
-    
+    const membership = membershipData.membership || { membership_type: 'free' };
+    isPremium.value = membership.membership_type === 'premium';
+    membershipExpiry.value = membership.expires_at;
+
     // 获取配额信息
     const quotaData = await membershipAPI.getQuota();
-    chatUsed.value = quotaData.chat_used || 0;
+    // 配额接口也返回 membership_type，作为二次确认
+    if (quotaData.membership_type === 'premium') {
+      isPremium.value = true;
+    }
     chatLimit.value = quotaData.chat_limit || (isPremium.value ? 50 : 10);
-    researchUsed.value = quotaData.research_used || 0;
+    chatUsed.value = chatLimit.value - (quotaData.chat_remaining || 0);
     researchLimit.value = quotaData.research_limit || (isPremium.value ? 10 : 1);
+    researchUsed.value = researchLimit.value - (quotaData.research_remaining || 0);
   } catch (error) {
     console.error('加载会员信息失败:', error);
     // 使用默认值

@@ -143,6 +143,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { getModels, getSessions, createSession as createSessionAPI, deleteSession as deleteSessionAPI } from '@/api/chat.js';
+import toast from '@/utils/toast';
 
 const router = useRouter();
 const loading = ref(false);
@@ -236,7 +237,7 @@ const loadModels = async () => {
     }
   } catch (error) {
     console.error('加载模型失败:', error);
-    alert(error.message);
+    toast.error(error.message);
   }
 };
 
@@ -251,7 +252,7 @@ const loadSessions = async () => {
     sessions.value = await getSessions(token.value);
   } catch (error) {
     console.error('加载会话失败:', error);
-    alert(error.message);
+    toast.error(error.message);
   } finally {
     loading.value = false;
   }
@@ -292,10 +293,10 @@ const createSession = async () => {
     
     // 重新加载会话列表
     await loadSessions();
-    alert('对话创建成功！');
+    toast.success('对话创建成功！');
   } catch (error) {
     console.error('创建会话失败:', error);
-    alert(error.message);
+    toast.error(error.message);
   }
 };
 
@@ -356,10 +357,10 @@ const saveEditSession = async () => {
 
     showEditDialog.value = false;
     editingSession.value = null;
-    alert('会话更新成功！');
+    toast.success('会话更新成功！');
   } catch (error) {
     console.error('更新会话失败:', error);
-    alert(error.message || '更新失败，请重试');
+    toast.error(error.message || '更新失败，请重试');
   }
 };
 
@@ -379,10 +380,10 @@ const deleteSessionConfirm = async (session) => {
   try {
     await deleteSessionAPI(token.value, session.id);
     await loadSessions();
-    alert('对话已删除');
+    toast.success('对话已删除');
   } catch (error) {
     console.error('删除会话失败:', error);
-    alert(error.message);
+    toast.error(error.message);
   }
 };
 
