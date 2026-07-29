@@ -91,7 +91,8 @@ research:
   session_timeout: 3600
   max_sources: 20
   enable_cache: true
-  worker_pool_size: 10
+  # Shared Eino agents retain mutable callback state; keep the durable worker serialized.
+  worker_pool_size: 1
 
 ai_question:
   default_provider: deepseek

@@ -71,9 +71,6 @@ apiClient.interceptors.response.use(
     
     // 处理401错误
     if (error.response?.status === 401) {
-      const data = error.response?.data || {}
-      // 提取错误码（兼容多种格式）
-      const errorCode = data?.error?.code || data?.code || ''
       // 判断是否是登录页面的认证失败（密码错误），而非 token 失效或账户被禁用
       const isLoginPageError = errorMessage.includes('密码') && window.location.pathname.includes('/login')
       
@@ -182,11 +179,22 @@ export const llmAPI = {
   }
 }
 
+function createResearchIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+  return `research-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
 // 研究API
 export const researchAPI = {
   // 开始研究
-  startResearch(data) {
-    return apiClient.post('/research/start', data)
+  startResearch(data, idempotencyKey = createResearchIdempotencyKey()) {
+    return apiClient.post('/research/start', data, {
+      headers: {
+        'Idempotency-Key': idempotencyKey
+      }
+    })
   },
 
   // 获取研究状态

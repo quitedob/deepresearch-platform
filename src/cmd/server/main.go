@@ -126,6 +126,8 @@ func main() {
 	var aiQuestionDAO *dao.AIQuestionDAO
 	var paperDAO *dao.PaperDAO
 	var toolCallDAO *dao.ToolCallDAO
+	var researchSubmissionDAO *dao.ResearchSubmissionDAO
+	var researchJobDAO *dao.ResearchJobDAO
 	if db != nil {
 		userDAO = dao.NewUserDAO(db)
 		chatDAO = dao.NewChatDAO(db)
@@ -139,6 +141,8 @@ func main() {
 		aiQuestionDAO = dao.NewAIQuestionDAO(db)
 		paperDAO = dao.NewPaperDAO(db)
 		toolCallDAO = dao.NewToolCallDAO(db)
+		researchSubmissionDAO = dao.NewResearchSubmissionDAO(db)
+		researchJobDAO = dao.NewResearchJobDAO(db)
 	}
 
 	// 初始化认证组件
@@ -480,7 +484,41 @@ func main() {
 	// 初始化API层
 	userAPI := v1.NewUserAPIEnhancedWithPreferences(jwtManager, nil, userDAO, userPreferencesDAO)
 	chatAPI := v1.NewChatAPIFull(chatDAO, userPreferencesDAO, membershipDAO, modelConfigDAO, llmScheduler, toolsAPIKey, miniMaxAPIKey, enableMiniMax)
-	researchAPI := v1.NewResearchAPI(researchDAO, researchService)
+	researchAPI := v1.NewResearchAPIFull(researchDAO, researchService, membershipDAO, modelConfigDAO)
+	var researchWorkerCancel context.CancelFunc
+	var researchWorkerDone chan error
+	if researchService != nil && researchSubmissionDAO != nil && researchJobDAO != nil {
+		researchAPI = v1.NewResearchAPIFull(
+			researchDAO,
+			researchService,
+			membershipDAO,
+			modelConfigDAO,
+			researchSubmissionDAO,
+		)
+		researchWorker := service.NewResearchWorker(
+			researchJobDAO,
+			researchService,
+			service.WorkerConfig{
+				PollInterval:  time.Second,
+				LeaseDuration: 30 * time.Second,
+			},
+		)
+		researchWorkerCtx, cancelResearchWorker := context.WithCancel(context.Background())
+		researchWorkerCancel = cancelResearchWorker
+		researchWorkerDone = make(chan error, 1)
+		go func() {
+			researchWorkerDone <- researchWorker.Start(researchWorkerCtx)
+		}()
+		log.Info("持久化研究任务工作器已启动",
+			zap.Int("workers", 1),
+			zap.Duration("lease_duration", 30*time.Second))
+		if cfg.Research.WorkerPoolSize > 1 {
+			log.Warn("研究工作器暂时强制为单并发，以隔离共享Agent回调状态",
+				zap.Int("configured_workers", cfg.Research.WorkerPoolSize))
+		}
+	} else {
+		log.Warn("持久化研究任务工作器未启动；研究提交接口将不可用")
+	}
 	llmAPI := v1.NewLLMAPIWithDAO(llmScheduler, modelConfigDAO)
 	healthAPI := v1.NewHealthAPI(db, nil)
 	mcpAPI := v1.NewMCPAPIWithTools(researchTools, toolCallDAO)
@@ -493,6 +531,7 @@ func main() {
 	router := api.NewRouterEnhancedFull(userAPI, chatAPI, researchAPI, llmAPI, healthAPI, mcpAPI, adminAPI, membershipAPI, notificationAPI, aiQuestionAPI, paperAPI)
 	// P0 修复：注入 userDAO 作为管理员检查器，启用中间件层 is_admin 数据库验证
 	if userDAO != nil {
+		middleware.InitUserStatusChecker(userDAO)
 		router.SetAdminChecker(userDAO)
 	}
 	engine := router.SetupEnhanced()
@@ -529,6 +568,18 @@ func main() {
 
 	if err := server.Shutdown(ctx); err != nil {
 		log.Error("服务器关闭失败", zap.Error(err))
+	}
+
+	if researchWorkerCancel != nil {
+		researchWorkerCancel()
+		select {
+		case err := <-researchWorkerDone:
+			if err != nil {
+				log.Error("研究工作器关闭失败", zap.Error(err))
+			}
+		case <-ctx.Done():
+			log.Warn("等待研究工作器关闭超时")
+		}
 	}
 
 	if sqlDB != nil {
