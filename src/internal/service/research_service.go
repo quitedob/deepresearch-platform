@@ -8,22 +8,31 @@ import (
 	"time"
 
 	"github.com/ai-research-platform/internal/cache"
+	"github.com/ai-research-platform/internal/logger"
+	"github.com/ai-research-platform/internal/models"
 	"github.com/ai-research-platform/internal/pkg/eino"
 	"github.com/ai-research-platform/internal/pkg/eino/agent"
-	"github.com/ai-research-platform/internal/models"
 	"github.com/ai-research-platform/internal/repository"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/datatypes"
 )
 
 // ResearchService handles research session operations
+type researchRunner interface {
+	RegisterCallback(agent.ProgressCallback)
+	ClearCallbacks()
+	Run(context.Context, string) (*agent.Result, error)
+}
+
 type ResearchService struct {
-	repo         repository.ResearchRepository
-	agent        *agent.ResearchAgent
-	orchestrator *agent.ParallelOrchestrator
-	tools        []eino.InvokableTool
-	cache        cache.Cache
-	eventStream  *EventStream
+	repo            repository.ResearchRepository
+	agent           researchRunner
+	evaluationAgent *agent.ResearchAgent
+	orchestrator    researchRunner
+	tools           []eino.InvokableTool
+	cache           cache.Cache
+	eventStream     *EventStream
 
 	// 会话生命周期管理：可取消的 context
 	activeSessions   map[string]context.CancelFunc
@@ -39,18 +48,20 @@ func NewResearchService(
 	eventStream *EventStream,
 ) *ResearchService {
 	return &ResearchService{
-		repo:           repo,
-		agent:          researchAgent,
-		tools:          tools,
-		cache:          cacheManager,
-		eventStream:    eventStream,
-		activeSessions: make(map[string]context.CancelFunc),
+		repo:            repo,
+		agent:           researchAgent,
+		evaluationAgent: researchAgent,
+		tools:           tools,
+		cache:           cacheManager,
+		eventStream:     eventStream,
+		activeSessions:  make(map[string]context.CancelFunc),
 	}
 }
 
 // SetAgent 设置研究 Agent
 func (s *ResearchService) SetAgent(ag *agent.ResearchAgent) {
 	s.agent = ag
+	s.evaluationAgent = ag
 }
 
 // SetOrchestrator 设置并行编排器
@@ -81,61 +92,84 @@ func (s *ResearchService) StartResearch(ctx context.Context, userID, query strin
 
 	go func() {
 		defer s.untrackSession(session.ID)
-		s.executeResearch(ctx, session)
+		_ = s.executeResearch(ctx, session)
 	}()
 
 	return session, nil
 }
 
+// CanExecute verifies that the service can dispatch the requested research type.
+func (s *ResearchService) CanExecute(researchType string) error {
+	if s.repo == nil {
+		return fmt.Errorf("research repository not configured")
+	}
+	if s.eventStream == nil {
+		return fmt.Errorf("research event stream not configured")
+	}
+	if (researchType == "deep" || researchType == "comprehensive") && s.orchestrator != nil {
+		return nil
+	}
+	if s.agent == nil {
+		return fmt.Errorf("research agent not configured")
+	}
+	return nil
+}
+
 // ExecuteResearch 执行研究（公开方法，供API调用）
-func (s *ResearchService) ExecuteResearch(sessionID, query, researchType string) {
-	s.ExecuteResearchWithConfig(sessionID, query, researchType, "", "", nil)
+func (s *ResearchService) ExecuteResearch(sessionID, query, researchType string) error {
+	return s.ExecuteResearchWithConfig(sessionID, query, researchType, "", "", nil)
 }
 
 // ExecuteResearchWithConfig 执行研究（含自定义 LLM/工具配置）
-func (s *ResearchService) ExecuteResearchWithConfig(sessionID, query, researchType, llmProvider, llmModel string, enabledTools []string) {
-	// 创建可取消的 context
+func (s *ResearchService) ExecuteResearchWithConfig(sessionID, query, researchType, llmProvider, llmModel string, enabledTools []string) error {
+	if llmProvider != "" || llmModel != "" || len(enabledTools) > 0 {
+		return fmt.Errorf("request-scoped model and tool configuration is not supported")
+	}
+	if err := s.CanExecute(researchType); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.trackSession(sessionID, cancel)
-
-	session := &models.ResearchSession{
-		ID:           sessionID,
-		Query:        query,
-		ResearchType: researchType,
-	}
-
-	// TODO: 当 llmProvider/llmModel 非空时，动态切换 ChatModel
-	// TODO: 当 enabledTools 非空时，过滤 agent 使用的工具集
-	if llmProvider != "" || llmModel != "" || len(enabledTools) > 0 {
-		ctx = context.WithValue(ctx, "llm_provider", llmProvider)
-		ctx = context.WithValue(ctx, "llm_model", llmModel)
-		ctx = context.WithValue(ctx, "enabled_tools", enabledTools)
-	}
-
+	session := &models.ResearchSession{ID: sessionID, Query: query, ResearchType: researchType}
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				fmt.Printf("[ERROR] panic in research goroutine (session=%s): %v\n", sessionID, r)
-				if s.eventStream != nil {
-					s.eventStream.Send(sessionID, &ResearchEvent{
-						Type:      "error",
-						Message:   fmt.Sprintf("研究任务异常终止: %v", r),
-						Timestamp: time.Now(),
-					})
-				}
+			if recovered := recover(); recovered != nil {
+				s.failResearch(context.Background(), sessionID, fmt.Errorf("research goroutine panicked: %v", recovered))
 			}
 			s.untrackSession(sessionID)
 		}()
-		s.executeResearch(ctx, session)
+		_ = s.executeResearch(ctx, session)
 	}()
+	return nil
+}
+
+// ExecuteResearchJob runs one durable research job in the caller's context.
+// It is synchronous so the database worker owns completion and retry decisions.
+func (s *ResearchService) ExecuteResearchJob(
+	ctx context.Context,
+	sessionID, query, researchType string,
+) error {
+	if err := s.CanExecute(researchType); err != nil {
+		return err
+	}
+	executionCtx, cancel := context.WithCancel(ctx)
+	s.trackSession(sessionID, cancel)
+	defer func() {
+		cancel()
+		s.untrackSession(sessionID)
+	}()
+
+	session := &models.ResearchSession{ID: sessionID, Query: query, ResearchType: researchType}
+	return s.executeResearch(executionCtx, session)
 }
 
 // executeResearch 执行研究
-func (s *ResearchService) executeResearch(ctx context.Context, session *models.ResearchSession) {
+func (s *ResearchService) executeResearch(ctx context.Context, session *models.ResearchSession) error {
 	// 优先使用并行编排器（deep/comprehensive类型）
 	useParallel := s.orchestrator != nil && (session.ResearchType == "deep" || session.ResearchType == "comprehensive")
 
 	if !useParallel && s.agent == nil {
+		err := fmt.Errorf("research agent not configured")
 		if s.eventStream != nil {
 			s.eventStream.Send(session.ID, &ResearchEvent{
 				Type:      "error",
@@ -144,7 +178,7 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 			})
 			s.eventStream.CloseStream(session.ID)
 		}
-		return
+		return err
 	}
 
 	// 创建进度回调
@@ -167,135 +201,113 @@ func (s *ResearchService) executeResearch(ctx context.Context, session *models.R
 		}
 	}
 
-	// 执行研究
-	var result *agent.Result
-	var err error
-
+	// 执行研究。回调属于一次执行，必须在返回或 panic 时清理。
+	var runner researchRunner
 	if useParallel {
-		s.orchestrator.RegisterCallback(progressCallback)
-		result, err = s.orchestrator.Run(ctx, session.Query)
-		// P0 修复：执行完毕后清除回调，防止跨会话累积
-		s.orchestrator.ClearCallbacks()
+		runner = s.orchestrator
 	} else {
-		if s.agent == nil {
-			if s.eventStream != nil {
-				s.eventStream.Send(session.ID, &ResearchEvent{
-					Type:      "error",
-					Message:   "Research agent not configured",
-					Timestamp: time.Now(),
-				})
-				s.eventStream.CloseStream(session.ID)
-			}
-			return
-		}
-		s.agent.RegisterCallback(progressCallback)
-		result, err = s.agent.Run(ctx, session.Query)
-		// P0 修复：执行完毕后清除回调
-		s.agent.ClearCallbacks()
+		runner = s.agent
 	}
+	runner.RegisterCallback(progressCallback)
+	defer runner.ClearCallbacks()
+	result, err := runner.Run(ctx, session.Query)
 
 	if err != nil {
-		if s.repo != nil {
-			_ = s.repo.UpdateSessionStatus(ctx, session.ID, "failed", 0.0)
-		}
-		if s.eventStream != nil {
-			s.eventStream.Send(session.ID, &ResearchEvent{
-				Type:      "error",
-				Message:   fmt.Sprintf("Research failed: %v", err),
-				Timestamp: time.Now(),
-			})
-			s.eventStream.CloseStream(session.ID)
-		}
-		return
+		s.failResearch(ctx, session.ID, fmt.Errorf("research failed: %w", err))
+		return err
 	}
 
-	// 保存研究结果
-	s.saveResearchResult(ctx, session, result)
+	if result == nil {
+		err = fmt.Errorf("research returned no result")
+		s.failResearch(ctx, session.ID, err)
+		return err
+	}
 
 	// ======= Evaluator 接入：对研究结果做质量评分 =======
-	if s.agent != nil && result.Success {
+	if s.evaluationAgent != nil && result.Success {
 		evaluationScore := s.evaluateResult(result, session)
 		if evaluationScore >= 0 {
 			result.ConfidenceScore = (result.ConfidenceScore + evaluationScore) / 2
 		}
 	}
-
-	if s.repo != nil {
-		_ = s.repo.UpdateSessionStatus(ctx, session.ID, "completed", 1.0)
+	if err := s.saveResearchResult(ctx, session, result); err != nil {
+		persistErr := fmt.Errorf("persist research result: %w", err)
+		s.failResearch(ctx, session.ID, persistErr)
+		return persistErr
 	}
-
-	// 发送完成事件
 	s.sendCompletedEvent(session, result)
-
-	// 关闭 EventStream，释放 channel 资源
 	if s.eventStream != nil {
 		s.eventStream.CloseStream(session.ID)
+	}
+	return nil
+}
+
+func (s *ResearchService) failResearch(ctx context.Context, sessionID string, cause error) {
+	logger.Error("research execution failed", zap.String("session_id", sessionID), zap.Error(cause))
+	if s.repo != nil {
+		if err := s.repo.UpdateSessionStatus(ctx, sessionID, "failed", 0.0); err != nil {
+			logger.Error("mark research failed status failed", zap.String("session_id", sessionID), zap.Error(err))
+		}
+	}
+	if s.eventStream != nil {
+		s.eventStream.Send(sessionID, &ResearchEvent{Type: "error", Message: cause.Error(), Timestamp: time.Now()})
+		s.eventStream.CloseStream(sessionID)
 	}
 }
 
 // saveResearchResult 保存研究结果到数据库
-func (s *ResearchService) saveResearchResult(ctx context.Context, session *models.ResearchSession, result *agent.Result) {
-	if !result.Success || s.repo == nil {
-		return
+func (s *ResearchService) saveResearchResult(ctx context.Context, session *models.ResearchSession, result *agent.Result) error {
+	if !result.Success {
+		return fmt.Errorf("research result was not successful: %s", result.Error)
 	}
-
-	for _, step := range result.Steps {
-		if step.Phase != "searching" {
-			continue
+	if s.repo == nil {
+		return fmt.Errorf("research repository not configured")
+	}
+	return s.repo.WithTransaction(ctx, func(repo repository.ResearchRepository) error {
+		for _, step := range result.Steps {
+			if step.Phase != "searching" {
+				continue
+			}
+			completedAt := step.Timestamp
+			inputJSON, err := json.Marshal(map[string]string{"thought": step.Thought})
+			if err != nil {
+				return fmt.Errorf("marshal research task input: %w", err)
+			}
+			outputJSON, err := json.Marshal(map[string]interface{}{"observation": step.Observation, "quality": step.Quality})
+			if err != nil {
+				return fmt.Errorf("marshal research task output: %w", err)
+			}
+			task := &models.ResearchTask{ResearchID: session.ID, TaskType: step.Phase, ToolName: step.Action, Status: "completed", Input: datatypes.JSON(inputJSON), Output: datatypes.JSON(outputJSON), ExecutionTime: int(result.ExecutionTime / int64(len(result.Steps)+1)), CreatedAt: step.Timestamp, CompletedAt: &completedAt}
+			if err := repo.SaveTask(ctx, task); err != nil {
+				return fmt.Errorf("save research task: %w", err)
+			}
 		}
-		completedAt := step.Timestamp
-		inputJSON, _ := json.Marshal(map[string]string{"thought": step.Thought})
-		outputJSON, _ := json.Marshal(map[string]interface{}{
-			"observation": step.Observation,
-			"quality":     step.Quality,
-		})
-
-		researchTask := &models.ResearchTask{
-			ResearchID:    session.ID,
-			TaskType:      step.Phase,
-			ToolName:      step.Action,
-			Status:        "completed",
-			Input:         datatypes.JSON(inputJSON),
-			Output:        datatypes.JSON(outputJSON),
-			ExecutionTime: int(result.ExecutionTime / int64(len(result.Steps)+1)),
-			CreatedAt:     step.Timestamp,
-			CompletedAt:   &completedAt,
+		metadata := map[string]interface{}{"tools_used": result.ToolsUsed, "execution_time": result.ExecutionTime, "confidence_score": result.ConfidenceScore, "source_count": result.SourceCount}
+		if result.StructuredReport != nil {
+			metadata["has_structured_report"] = true
+			metadata["conclusions_count"] = len(result.StructuredReport.Structured.Conclusions)
+			metadata["unresolved_issues"] = result.StructuredReport.Structured.UnresolvedIssues
+			metadata["key_insights"] = result.StructuredReport.Structured.KeyInsights
 		}
-		_ = s.repo.SaveTask(ctx, researchTask)
-	}
-
-	metadataMap := map[string]interface{}{
-		"tools_used":       result.ToolsUsed,
-		"execution_time":   result.ExecutionTime,
-		"confidence_score": result.ConfidenceScore,
-		"source_count":     result.SourceCount,
-	}
-
-	if result.StructuredReport != nil {
-		metadataMap["has_structured_report"] = true
-		metadataMap["conclusions_count"] = len(result.StructuredReport.Structured.Conclusions)
-		metadataMap["unresolved_issues"] = result.StructuredReport.Structured.UnresolvedIssues
-		metadataMap["key_insights"] = result.StructuredReport.Structured.KeyInsights
-	}
-
-	if len(result.CriticResults) > 0 {
-		lastCritic := result.CriticResults[len(result.CriticResults)-1]
-		metadataMap["critic_quality_score"] = lastCritic.QualityScore
-		metadataMap["contradictions_found"] = len(lastCritic.Contradictions)
-		metadataMap["evidence_gaps"] = lastCritic.EvidenceGaps
-	}
-
-	metadataJSON, _ := json.Marshal(metadataMap)
-
-	researchResult := &models.ResearchResult{
-		ResearchID: session.ID,
-		Summary:    result.FinalAnswer,
-		Findings:   datatypes.JSON("[]"),
-		Citations:  datatypes.JSON("[]"),
-		Metadata:   datatypes.JSON(metadataJSON),
-		CreatedAt:  time.Now(),
-	}
-	_ = s.repo.SaveResult(ctx, researchResult)
+		if len(result.CriticResults) > 0 {
+			critic := result.CriticResults[len(result.CriticResults)-1]
+			metadata["critic_quality_score"] = critic.QualityScore
+			metadata["contradictions_found"] = len(critic.Contradictions)
+			metadata["evidence_gaps"] = critic.EvidenceGaps
+		}
+		metadataJSON, err := json.Marshal(metadata)
+		if err != nil {
+			return fmt.Errorf("marshal research result metadata: %w", err)
+		}
+		resultModel := &models.ResearchResult{ResearchID: session.ID, Summary: result.FinalAnswer, Findings: datatypes.JSON("[]"), Citations: datatypes.JSON("[]"), Metadata: datatypes.JSON(metadataJSON), CreatedAt: time.Now()}
+		if err := repo.SaveResult(ctx, resultModel); err != nil {
+			return fmt.Errorf("save research result: %w", err)
+		}
+		if err := repo.UpdateSessionStatus(ctx, session.ID, "completed", 1.0); err != nil {
+			return fmt.Errorf("mark research completed: %w", err)
+		}
+		return nil
+	})
 }
 
 // sendCompletedEvent 发送研究完成事件
@@ -450,6 +462,9 @@ func (s *ResearchService) CancelResearch(ctx context.Context, sessionID string) 
 // trackSession 追踪活跃会话的 cancel 函数
 func (s *ResearchService) trackSession(sessionID string, cancel context.CancelFunc) {
 	s.activeSessionsMu.Lock()
+	if s.activeSessions == nil {
+		s.activeSessions = make(map[string]context.CancelFunc)
+	}
 	// 如果有旧的同 ID 会话正在运行，先取消它
 	if oldCancel, ok := s.activeSessions[sessionID]; ok {
 		oldCancel()
@@ -467,7 +482,7 @@ func (s *ResearchService) untrackSession(sessionID string) {
 
 // evaluateResult 使用 Evaluator 对研究结果质量评分
 func (s *ResearchService) evaluateResult(result *agent.Result, session *models.ResearchSession) float64 {
-	if s.agent == nil || !result.Success || result.FinalAnswer == "" {
+	if s.evaluationAgent == nil || !result.Success || result.FinalAnswer == "" {
 		return -1
 	}
 
@@ -481,7 +496,7 @@ func (s *ResearchService) evaluateResult(result *agent.Result, session *models.R
 		MaxTimeSeconds:  0, // 已经执行完毕，不限时
 	}
 
-	evaluator := agent.NewEvaluator(s.agent)
+	evaluator := agent.NewEvaluator(s.evaluationAgent)
 
 	// 直接用已有结果构造评测结果，不重新执行研究
 	evalResult := &agent.TestEvaluationResult{

@@ -1,4 +1,4 @@
-﻿// Package database 提供数据库连接功能
+// Package database 提供数据库连接功能
 package database
 
 import (
@@ -133,7 +133,6 @@ func createDatabase(cfg Config) error {
 	return nil
 }
 
-
 // AllModels 返回所有需要迁移的模型
 func AllModels() []interface{} {
 	return []interface{}{
@@ -150,6 +149,10 @@ func AllModels() []interface{} {
 		&model.ResearchEvidence{},
 		&model.ResearchCitation{},
 		&model.ResearchFinding{},
+		&model.IdempotencyRecord{},
+		&model.ResearchQuotaReservation{},
+		&model.ResearchJob{},
+		&model.OutboxEvent{},
 		// 会员相关
 		&model.UserMembership{},
 		&model.ActivationCode{},
@@ -190,6 +193,10 @@ func RequiredTables() []string {
 		"research_evidences",
 		"research_citations",
 		"research_findings",
+		"idempotency_records",
+		"research_quota_reservations",
+		"research_jobs",
+		"outbox_events",
 		"user_memberships",
 		"activation_codes",
 		"activation_records",
@@ -223,22 +230,38 @@ var TableColumnRequirements = map[string][]string{
 	"research_evidences": {"id", "research_id", "source_type", "content"},
 	"research_citations": {"id", "research_id", "citation_type"},
 	"research_findings":  {"id", "research_id", "category", "content"},
-	"user_memberships":   {"id", "user_id", "membership_type", "normal_chat_limit", "research_limit"},
-	"activation_codes":   {"id", "code", "max_activations", "valid_days"},
-	"activation_records": {"id", "activation_code_id", "user_id"},
-	"notifications":      {"id", "title", "content", "type"},
-	"user_notifications": {"id", "user_id", "notification_id", "is_read"},
-	"provider_configs":   {"id", "provider", "is_enabled"},
-	"model_configs":      {"id", "provider", "model_name", "is_enabled"},
-	"quota_configs":      {"id", "membership_type", "chat_limit", "research_limit"},
-	"paper_sessions":     {"id", "user_id", "topic", "status"},
-	"paper_chapters":     {"id", "paper_id", "chapter_type", "content"},
-	"paper_citations":    {"id", "paper_id", "citation_type"},
-	"paper_reviews":      {"id", "paper_id", "review_round", "review_type"},
+	"idempotency_records": {
+		"id", "user_id", "endpoint", "idempotency_key", "request_hash", "state",
+		"resource_id", "http_status", "response_body", "created_at", "expires_at",
+	},
+	"research_quota_reservations": {
+		"id", "user_id", "research_id", "membership_type", "counter_name", "units",
+		"status", "reserved_at", "consumed_at", "released_at",
+	},
+	"research_jobs": {
+		"id", "research_id", "status", "attempts", "max_attempts", "available_at",
+		"lease_owner", "lease_until", "fence_token", "started_at", "completed_at",
+		"last_error", "created_at", "updated_at",
+	},
+	"outbox_events": {
+		"id", "aggregate_type", "aggregate_id", "topic", "payload", "created_at",
+		"published_at", "attempts",
+	},
+	"user_memberships":     {"id", "user_id", "membership_type", "normal_chat_limit", "research_limit"},
+	"activation_codes":     {"id", "code", "max_activations", "valid_days"},
+	"activation_records":   {"id", "activation_code_id", "user_id"},
+	"notifications":        {"id", "title", "content", "type"},
+	"user_notifications":   {"id", "user_id", "notification_id", "is_read"},
+	"provider_configs":     {"id", "provider", "is_enabled"},
+	"model_configs":        {"id", "provider", "model_name", "is_enabled"},
+	"quota_configs":        {"id", "membership_type", "chat_limit", "research_limit"},
+	"paper_sessions":       {"id", "user_id", "topic", "status"},
+	"paper_chapters":       {"id", "paper_id", "chapter_type", "content"},
+	"paper_citations":      {"id", "paper_id", "citation_type"},
+	"paper_reviews":        {"id", "paper_id", "review_round", "review_type"},
 	"paper_search_records": {"id", "paper_id", "query", "tool_name"},
-	"tool_call_records":  {"id", "research_id", "tool_name", "success"},
+	"tool_call_records":    {"id", "research_id", "tool_name", "success"},
 }
-
 
 // RunFullMigration 运行完整的数据库迁移（带检查和修复）
 func RunFullMigration(db *gorm.DB, log *zap.Logger) error {
@@ -364,7 +387,6 @@ func initializeAdmin(db *gorm.DB, log *zap.Logger, cfg *AdminConfig) error {
 
 	return nil
 }
-
 
 // checkAndFixTable 检查并修复单个表
 func checkAndFixTable(db *gorm.DB, log *zap.Logger, tableName string) error {

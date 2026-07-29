@@ -1,15 +1,16 @@
-﻿ package v1
+package v1
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/ai-research-platform/internal/logger"
 	"github.com/ai-research-platform/internal/middleware"
 	"github.com/ai-research-platform/internal/repository/dao"
 	"github.com/ai-research-platform/internal/repository/model"
@@ -17,6 +18,8 @@ import (
 	"github.com/ai-research-platform/internal/types/constant"
 	"github.com/ai-research-platform/internal/types/request"
 	"github.com/ai-research-platform/internal/types/response"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // ResearchAPI 研究API
@@ -25,6 +28,11 @@ type ResearchAPI struct {
 	researchService *service.ResearchService
 	membershipDAO   *dao.MembershipDAO
 	modelConfigDAO  *dao.ModelConfigDAO
+	submissionStore ResearchSubmissionStore
+}
+
+type ResearchSubmissionStore interface {
+	Submit(context.Context, dao.ResearchSubmissionCommand) (*dao.ResearchSubmissionResult, error)
 }
 
 // NewResearchAPI 创建研究API
@@ -45,17 +53,28 @@ func NewResearchAPIWithMembership(researchDAO *dao.ResearchDAO, researchService 
 }
 
 // NewResearchAPIFull 创建完整的研究API（包含模型配置验证）
-func NewResearchAPIFull(researchDAO *dao.ResearchDAO, researchService *service.ResearchService, membershipDAO *dao.MembershipDAO, modelConfigDAO *dao.ModelConfigDAO) *ResearchAPI {
-	return &ResearchAPI{
+func NewResearchAPIFull(
+	researchDAO *dao.ResearchDAO,
+	researchService *service.ResearchService,
+	membershipDAO *dao.MembershipDAO,
+	modelConfigDAO *dao.ModelConfigDAO,
+	submissionStores ...ResearchSubmissionStore,
+) *ResearchAPI {
+	api := &ResearchAPI{
 		researchDAO:     researchDAO,
 		researchService: researchService,
 		membershipDAO:   membershipDAO,
 		modelConfigDAO:  modelConfigDAO,
 	}
+	if len(submissionStores) > 0 {
+		api.submissionStore = submissionStores[0]
+	}
+	return api
 }
 
 // 研究查询的最大长度限制
 const maxResearchQueryLength = constant.MaxResearchQueryLength
+const researchStartEndpoint = "/api/v1/research/start"
 
 // StartResearch 开始研究
 // 修复：添加输入验证、状态同步
@@ -65,47 +84,19 @@ func (api *ResearchAPI) StartResearch(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "认证失败"})
 		return
 	}
-
 	var req request.StartResearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的请求参数: " + err.Error()})
 		return
 	}
-
-	// 修复：验证查询长度，防止DoS攻击
 	if len(req.Query) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "研究查询不能为空"})
 		return
 	}
 	if len(req.Query) > maxResearchQueryLength {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error":   "研究查询过长，最大允许10000字符",
-			"code":    "QUERY_TOO_LONG",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "研究查询过长，最大允许10000字符", "code": "QUERY_TOO_LONG"})
 		return
 	}
-
-	// 检查并扣减研究配额（原子操作，先扣减后执行）
-	if api.membershipDAO != nil {
-		hasQuota, remaining, _, err := api.membershipDAO.CheckAndDeductResearchQuota(c.Request.Context(), userID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "检查配额失败"})
-			return
-		}
-		if !hasQuota {
-			c.JSON(http.StatusForbidden, gin.H{
-				"success":   false,
-				"error":     "深度研究配额已用完",
-				"remaining": remaining,
-				"code":      "QUOTA_EXCEEDED",
-			})
-			return
-		}
-		// 配额已扣减，如果后续创建会话失败需要退还
-	}
-
-	// 修复：验证研究类型
 	validResearchTypes := map[string]bool{
 		constant.ResearchTypeQuick:         true,
 		constant.ResearchTypeDeep:          true,
@@ -117,90 +108,78 @@ func (api *ResearchAPI) StartResearch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "无效的研究类型，支持: quick, deep, comprehensive",
+			"code":    "INVALID_RESEARCH_TYPE",
 		})
 		return
 	}
-
-	session := &model.ResearchSession{
-		UserID:       userID,
-		Query:        req.Query,
-		Status:       "planning",
-		Progress:     0,
-		ResearchType: req.ResearchType,
-	}
-
-	if req.LLMConfig != nil || req.ToolsConfig != nil || req.Options != nil {
-		metadata := map[string]interface{}{
-			"llm_config":   req.LLMConfig,
-			"tools_config": req.ToolsConfig,
-			"options":      req.Options,
-		}
-		metadataJSON, _ := json.Marshal(metadata)
-		session.Metadata = metadataJSON
-	}
-
-	if api.researchDAO != nil {
-		if err := api.researchDAO.CreateSession(c.Request.Context(), session); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "创建研究会话失败: " + err.Error()})
-			return
-		}
-	} else {
-		session.ID = "research_" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	}
-
-	// 配额已在请求开始时扣减，无需再次增加
-	// 如果创建会话失败，配额已经扣减，这是可接受的（防止滥用）
-
-	// 启动异步研究任务
-	if api.researchService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if !validResearchIdempotencyKey(idempotencyKey) {
+		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
-			"error":   "深度研究服务未配置，请检查服务器配置",
-			"code":    "RESEARCH_SERVICE_UNAVAILABLE",
+			"error":   "Idempotency-Key 必须为8到255个可见ASCII字符",
+			"code":    "INVALID_IDEMPOTENCY_KEY",
 		})
 		return
 	}
-
-	// 传递 LLM/工具配置到执行链路
 	var llmProvider, llmModel string
 	var enabledTools []string
 	if req.LLMConfig != nil {
-		llmProvider = req.LLMConfig.Provider
-		llmModel = req.LLMConfig.Model
+		llmProvider, llmModel = req.LLMConfig.Provider, req.LLMConfig.Model
 	}
 	if req.ToolsConfig != nil {
 		enabledTools = req.ToolsConfig.EnabledTools
 	}
-
-	// 验证请求的模型是否在数据库中启用
-	if api.modelConfigDAO != nil && llmProvider != "" && llmModel != "" {
-		isEnabled, err := api.modelConfigDAO.IsModelEnabled(c.Request.Context(), llmProvider, llmModel)
+	if llmProvider != "" || llmModel != "" || len(enabledTools) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "当前不支持按请求指定研究模型或工具配置", "code": "UNSUPPORTED_RESEARCH_CONFIGURATION"})
+		return
+	}
+	if api.submissionStore == nil {
+		logger.Error("research submission store is not configured")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "深度研究提交服务未配置", "code": "RESEARCH_SERVICE_UNAVAILABLE"})
+		return
+	}
+	var metadataJSON []byte
+	if req.Options != nil {
+		metadataJSON, err = json.Marshal(map[string]interface{}{"options": req.Options})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"error":   "验证模型配置失败",
-			})
-			return
-		}
-		if !isEnabled {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"error":   "模型 " + llmProvider + "/" + llmModel + " 未启用或不可用，请在设置中选择其他模型",
-				"code":    "MODEL_DISABLED",
-			})
+			logger.Error("marshal research options failed", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "处理研究配置失败"})
 			return
 		}
 	}
-
-	go func() {
-		api.researchService.ExecuteResearchWithConfig(session.ID, req.Query, req.ResearchType, llmProvider, llmModel, enabledTools)
-	}()
-
-	c.JSON(http.StatusCreated, gin.H{
-		"success":    true,
-		"session_id": session.ID,
-		"message":    "研究任务已启动",
+	result, err := api.submissionStore.Submit(c.Request.Context(), dao.ResearchSubmissionCommand{
+		UserID:         userID,
+		Endpoint:       researchStartEndpoint,
+		IdempotencyKey: idempotencyKey,
+		Query:          req.Query,
+		ResearchType:   req.ResearchType,
+		Metadata:       metadataJSON,
 	})
+	if err != nil {
+		switch {
+		case errors.Is(err, dao.ErrIdempotencyConflict):
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": "Idempotency-Key 已用于不同的研究请求", "code": "IDEMPOTENCY_CONFLICT"})
+		case errors.Is(err, dao.ErrResearchQuotaExceeded):
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "深度研究配额已用完", "code": "QUOTA_EXCEEDED"})
+		default:
+			logger.Error("durable research submission failed", zap.String("user_id", userID), zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "创建研究任务失败"})
+		}
+		return
+	}
+	c.Data(result.HTTPStatus, "application/json; charset=utf-8", result.Body)
+}
+
+func validResearchIdempotencyKey(key string) bool {
+	if len(key) < 8 || len(key) > 255 {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < 0x21 || key[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 // GetResearchStatus 获取研究状态

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ai-research-platform/internal/repository/model"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

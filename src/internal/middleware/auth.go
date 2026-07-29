@@ -1,7 +1,8 @@
-﻿package middleware
+package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,8 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/ai-research-platform/internal/logger"
 	"github.com/ai-research-platform/internal/pkg/auth"
+	"github.com/ai-research-platform/internal/repository/model"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // UserAdminChecker 用于 AdminAuth 中间件的用户管理员检查接口
@@ -19,10 +24,17 @@ type UserAdminChecker interface {
 	IsAdmin(ctx context.Context, userID string) (bool, error)
 }
 
+type UserStatusChecker interface {
+	FindByID(ctx context.Context, userID string) (*model.User, error)
+}
+
+var errUserAccountInactive = errors.New("user account is not active")
+
 // 单例 JWTManager，避免每次请求重新创建
 var (
 	defaultJWTManager *auth.JWTManager
 	jwtManagerOnce    sync.Once
+	userStatusChecker UserStatusChecker
 )
 
 // InitDefaultJWTManager 使用指定密钥初始化单例 JWTManager
@@ -32,6 +44,10 @@ func InitDefaultJWTManager(secret string, expiration time.Duration) {
 	jwtManagerOnce.Do(func() {
 		defaultJWTManager = auth.NewJWTManager(secret, expiration)
 	})
+}
+
+func InitUserStatusChecker(checker UserStatusChecker) {
+	userStatusChecker = checker
 }
 
 // getDefaultJWTManager 返回单例 JWTManager
@@ -57,6 +73,51 @@ func unauthorizedResponse(c *gin.Context, code, message string) {
 	c.Abort()
 }
 
+func requireActiveUser(ctx context.Context, userID string) (*model.User, error) {
+	if userStatusChecker == nil {
+		err := fmt.Errorf("user status checker is not configured")
+		logger.Error("authentication status check unavailable", zap.Error(err))
+		return nil, err
+	}
+	user, err := userStatusChecker.FindByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Warn("missing account rejected", zap.String("user_id", userID))
+			return nil, errUserAccountInactive
+		}
+		wrappedErr := fmt.Errorf("lookup current user status: %w", err)
+		logger.Error("authentication status lookup failed", zap.String("user_id", userID), zap.Error(wrappedErr))
+		return nil, wrappedErr
+	}
+	if user == nil || user.Status != "active" {
+		logger.Warn("inactive account rejected", zap.String("user_id", userID))
+		return nil, errUserAccountInactive
+	}
+	return user, nil
+}
+
+func authenticateClaims(c *gin.Context, jwtManager *auth.JWTManager, tokenString string) (string, bool) {
+	claims, err := jwtManager.ValidateToken(tokenString)
+	if err != nil {
+		unauthorizedResponse(c, "ERR_TOKEN_INVALID", "无效或已过期的令牌")
+		return "", false
+	}
+	user, err := requireActiveUser(c.Request.Context(), claims.UserID)
+	if err != nil {
+		status, code, message := http.StatusServiceUnavailable, "ERR_AUTH_STATUS_UNAVAILABLE", "账户状态暂时无法验证"
+		if errors.Is(err, errUserAccountInactive) {
+			status, code, message = http.StatusForbidden, "ERR_ACCOUNT_INACTIVE", "账户已被禁用或不可用"
+		}
+		c.JSON(status, gin.H{"success": false, "code": code, "message": message})
+		c.Abort()
+		return "", false
+	}
+	c.Set("user_id", user.ID)
+	c.Set("email", user.Email)
+	c.Set("username", user.Username)
+	return user.ID, true
+}
+
 // AdminAuth 管理员认证中间件 - 验证 JWT 并通过数据库检查 is_admin 字段
 // P0 修复：在路由层拦截非管理员请求，不再仅依赖 handler 内的二次检查
 func AdminAuth(checker ...UserAdminChecker) gin.HandlerFunc {
@@ -78,15 +139,14 @@ func AdminAuth(checker ...UserAdminChecker) gin.HandlerFunc {
 			return
 		}
 
-		claims, err := getDefaultJWTManager().ValidateToken(parts[1])
-		if err != nil {
-			unauthorizedResponse(c, "ERR_TOKEN_INVALID", "无效或已过期的令牌")
+		userID, ok := authenticateClaims(c, getDefaultJWTManager(), parts[1])
+		if !ok {
 			return
 		}
 
 		// P0 修复：如果注入了 checker，在中间件层做数据库级 is_admin 验证
 		if adminChecker != nil {
-			isAdmin, err := adminChecker.IsAdmin(c.Request.Context(), claims.UserID)
+			isAdmin, err := adminChecker.IsAdmin(c.Request.Context(), userID)
 			if err != nil || !isAdmin {
 				c.JSON(http.StatusForbidden, gin.H{
 					"success": false,
@@ -97,10 +157,6 @@ func AdminAuth(checker ...UserAdminChecker) gin.HandlerFunc {
 				return
 			}
 		}
-
-		c.Set("user_id", claims.UserID)
-		c.Set("email", claims.Email)
-		c.Set("username", claims.Username)
 
 		c.Next()
 	}
@@ -121,17 +177,24 @@ func Auth() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := getDefaultJWTManager().ValidateToken(parts[1])
-		if err != nil {
-			unauthorizedResponse(c, "ERR_TOKEN_INVALID", "无效或已过期的令牌")
+		if _, ok := authenticateClaims(c, getDefaultJWTManager(), parts[1]); !ok {
 			return
 		}
 
-		// 设置用户信息到上下文
-		c.Set("user_id", claims.UserID)
-		c.Set("email", claims.Email)
-		c.Set("username", claims.Username)
+		c.Next()
+	}
+}
 
+func AuthWithJWT(jwtManager *auth.JWTManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		parts := strings.SplitN(c.GetHeader("Authorization"), " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			unauthorizedResponse(c, "ERR_UNAUTHORIZED", "无效的Authorization头格式")
+			return
+		}
+		if _, ok := authenticateClaims(c, jwtManager, parts[1]); !ok {
+			return
+		}
 		c.Next()
 	}
 }
@@ -178,14 +241,22 @@ func RequireAuth(c *gin.Context) (string, error) {
 // ValidateTokenString 直接验证token字符串并返回用户ID
 // 用于SSE等无法使用Authorization header的场景
 func ValidateTokenString(tokenString string) (string, error) {
+	return ValidateTokenStringContext(context.Background(), tokenString)
+}
+
+func ValidateTokenStringContext(ctx context.Context, tokenString string) (string, error) {
 	if tokenString == "" {
 		return "", http.ErrNoCookie
 	}
-
 	claims, err := getDefaultJWTManager().ValidateToken(tokenString)
 	if err != nil {
-		return "", err
+		wrappedErr := fmt.Errorf("validate stream token: %w", err)
+		logger.Warn("stream token validation failed", zap.Error(wrappedErr))
+		return "", wrappedErr
 	}
-
-	return claims.UserID, nil
+	user, err := requireActiveUser(ctx, claims.UserID)
+	if err != nil {
+		return "", fmt.Errorf("validate stream account status: %w", err)
+	}
+	return user.ID, nil
 }
