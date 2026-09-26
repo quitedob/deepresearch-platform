@@ -15,7 +15,9 @@ dist/
 # Output of the go coverage tool
 *.out
 coverage.html
-docs/
+# Preserve documentation ignores while tracking repository instructions.
+/docs/*
+!/docs/AGENTS.md
 # Dependency directories
 vendor/
 
