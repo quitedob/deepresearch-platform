@@ -2,10 +2,12 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ai-research-platform/internal/repository/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MembershipDAO 会员数据访问对象
@@ -25,20 +27,20 @@ func (d *MembershipDAO) GetOrCreateMembership(ctx context.Context, userID string
 	if err == gorm.ErrRecordNotFound {
 		// 从配额配置表读取默认值
 		var quotaConfig model.QuotaConfig
-		chatLimit := 10      // 默认值
-		researchLimit := 1   // 默认值
+		chatLimit := 10    // 默认值
+		researchLimit := 1 // 默认值
 		if err := d.db.WithContext(ctx).Where("membership_type = ?", "free").First(&quotaConfig).Error; err == nil {
 			chatLimit = quotaConfig.ChatLimit
 			researchLimit = quotaConfig.ResearchLimit
 		}
 
 		membership = model.UserMembership{
-			UserID:           userID,
-			MembershipType:   model.MembershipFree,
-			NormalChatLimit:  chatLimit,
-			NormalChatUsed:   0,
-			ResearchLimit:    researchLimit,
-			ResearchUsed:     0,
+			UserID:          userID,
+			MembershipType:  model.MembershipFree,
+			NormalChatLimit: chatLimit,
+			NormalChatUsed:  0,
+			ResearchLimit:   researchLimit,
+			ResearchUsed:    0,
 		}
 		if err := d.db.WithContext(ctx).Create(&membership).Error; err != nil {
 			return nil, err
@@ -50,13 +52,21 @@ func (d *MembershipDAO) GetOrCreateMembership(ctx context.Context, userID string
 	}
 
 	// 检查高级会员是否已过期，自动降级
-	if membership.MembershipType == model.MembershipPremium &&
-		membership.ExpiresAt != nil && time.Now().After(*membership.ExpiresAt) {
-		membership.MembershipType = model.MembershipFree
-		membership.ExpiresAt = nil
-		membership.NormalChatUsed = 0
-		membership.ResearchUsed = 0
-		d.db.WithContext(ctx).Save(&membership)
+	if expirePremiumMembership(&membership, time.Now()) {
+		// Re-read under the same lock used by quota deduction. A concurrent
+		// submission may already have downgraded and charged this membership.
+		if err := d.db.WithContext(ctx).Transaction(func(transaction *gorm.DB) error {
+			if err := transaction.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ?", userID).First(&membership).Error; err != nil {
+				return err
+			}
+			if expirePremiumMembership(&membership, time.Now()) {
+				return transaction.Save(&membership).Error
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	return &membership, nil
@@ -80,18 +90,18 @@ func (d *MembershipDAO) IncrementChatUsage(ctx context.Context, userID string) e
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var membership model.UserMembership
 		// 使用 FOR UPDATE 锁定行，防止并发更新
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ?", userID).First(&membership).Error
 		if err == gorm.ErrRecordNotFound {
 			// 从配额配置表读取默认值
 			var quotaConfig model.QuotaConfig
-			chatLimit := 10      // 默认值
-			researchLimit := 1   // 默认值
+			chatLimit := 10    // 默认值
+			researchLimit := 1 // 默认值
 			if err := tx.Where("membership_type = ?", "free").First(&quotaConfig).Error; err == nil {
 				chatLimit = quotaConfig.ChatLimit
 				researchLimit = quotaConfig.ResearchLimit
 			}
-			
+
 			// 创建新记录
 			membership = model.UserMembership{
 				UserID:          userID,
@@ -129,7 +139,7 @@ func (d *MembershipDAO) IncrementResearchUsage(ctx context.Context, userID strin
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var membership model.UserMembership
 		// 使用 FOR UPDATE 锁定行，防止并发更新
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ?", userID).First(&membership).Error
 		if err == gorm.ErrRecordNotFound {
 			membership = model.UserMembership{
@@ -338,7 +348,7 @@ func (d *MembershipDAO) CheckAndDeductChatQuota(ctx context.Context, userID stri
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var membership model.UserMembership
 		// 使用 FOR UPDATE 锁定行
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ?", userID).First(&membership).Error
 		if err == gorm.ErrRecordNotFound {
 			// 创建新记录并扣减1次
@@ -369,14 +379,14 @@ func (d *MembershipDAO) CheckAndDeductChatQuota(ctx context.Context, userID stri
 				resetTime := time.Now().Add(5 * time.Hour)
 				membership.PremiumResetAt = &resetTime
 			}
-			
+
 			limit = membership.PremiumChatLimit
 			if membership.PremiumChatUsed >= membership.PremiumChatLimit {
 				hasQuota = false
 				remaining = 0
 				return nil // 不扣减，返回配额不足
 			}
-			
+
 			membership.PremiumChatUsed++
 			remaining = membership.PremiumChatLimit - membership.PremiumChatUsed
 			hasQuota = true
@@ -387,7 +397,7 @@ func (d *MembershipDAO) CheckAndDeductChatQuota(ctx context.Context, userID stri
 				remaining = 0
 				return nil // 不扣减，返回配额不足
 			}
-			
+
 			membership.NormalChatUsed++
 			remaining = membership.NormalChatLimit - membership.NormalChatUsed
 			hasQuota = true
@@ -407,64 +417,17 @@ func (d *MembershipDAO) CheckAndDeductResearchQuota(ctx context.Context, userID 
 	var remaining, limit int
 
 	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var membership model.UserMembership
-		// 使用 FOR UPDATE 锁定行
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("user_id = ?", userID).First(&membership).Error
-		if err == gorm.ErrRecordNotFound {
-			// 创建新记录并扣减1次
-			membership = model.UserMembership{
-				UserID:          userID,
-				MembershipType:  model.MembershipFree,
-				NormalChatLimit: 10,
-				NormalChatUsed:  0,
-				ResearchLimit:   1,
-				ResearchUsed:    1, // 直接扣减
-			}
-			if err := tx.Create(&membership).Error; err != nil {
-				return err
-			}
-			hasQuota = true
-			remaining = 0
-			limit = 1
+		_, _, deductedRemaining, deductedLimit, err := deductResearchQuotaCounterTx(tx, userID, time.Now().UTC())
+		remaining, limit = deductedRemaining, deductedLimit
+		if errors.Is(err, ErrResearchQuotaExceeded) {
+			hasQuota = false
 			return nil
-		} else if err != nil {
+		}
+		if err != nil {
 			return err
 		}
-
-		if membership.MembershipType == model.MembershipPremium {
-			// 检查是否需要重置
-			if membership.PremiumResetAt != nil && time.Now().After(*membership.PremiumResetAt) {
-				membership.PremiumChatUsed = 0
-				membership.PremiumResearchUsed = 0
-				resetTime := time.Now().Add(5 * time.Hour)
-				membership.PremiumResetAt = &resetTime
-			}
-			
-			limit = membership.PremiumResearchLimit
-			if membership.PremiumResearchUsed >= membership.PremiumResearchLimit {
-				hasQuota = false
-				remaining = 0
-				return nil // 不扣减，返回配额不足
-			}
-			
-			membership.PremiumResearchUsed++
-			remaining = membership.PremiumResearchLimit - membership.PremiumResearchUsed
-			hasQuota = true
-		} else {
-			limit = membership.ResearchLimit
-			if membership.ResearchUsed >= membership.ResearchLimit {
-				hasQuota = false
-				remaining = 0
-				return nil // 不扣减，返回配额不足
-			}
-			
-			membership.ResearchUsed++
-			remaining = membership.ResearchLimit - membership.ResearchUsed
-			hasQuota = true
-		}
-
-		return tx.Save(&membership).Error
+		hasQuota = true
+		return nil
 	})
 
 	return hasQuota, remaining, limit, err
@@ -474,7 +437,7 @@ func (d *MembershipDAO) CheckAndDeductResearchQuota(ctx context.Context, userID 
 func (d *MembershipDAO) RefundChatQuota(ctx context.Context, userID string) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var membership model.UserMembership
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ?", userID).First(&membership).Error
 		if err != nil {
 			return err
@@ -498,7 +461,7 @@ func (d *MembershipDAO) RefundChatQuota(ctx context.Context, userID string) erro
 func (d *MembershipDAO) RefundResearchQuota(ctx context.Context, userID string) error {
 	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var membership model.UserMembership
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("user_id = ?", userID).First(&membership).Error
 		if err != nil {
 			return err
@@ -522,21 +485,21 @@ func (d *MembershipDAO) RefundResearchQuota(ctx context.Context, userID string) 
 // 返回重置的用户数量
 func (d *MembershipDAO) ResetExpiredQuotas(ctx context.Context) (int, error) {
 	now := time.Now()
-	
+
 	// 重置高级会员的过期配额
 	result := d.db.WithContext(ctx).Model(&model.UserMembership{}).
-		Where("membership_type = ? AND premium_reset_at IS NOT NULL AND premium_reset_at < ?", 
+		Where("membership_type = ? AND premium_reset_at IS NOT NULL AND premium_reset_at < ?",
 			model.MembershipPremium, now).
 		Updates(map[string]interface{}{
 			"premium_chat_used":     0,
 			"premium_research_used": 0,
 			"premium_reset_at":      now.Add(5 * time.Hour),
 		})
-	
+
 	if result.Error != nil {
 		return 0, result.Error
 	}
-	
+
 	return int(result.RowsAffected), nil
 }
 
@@ -545,7 +508,7 @@ func (d *MembershipDAO) BatchResetUserQuotas(ctx context.Context, userIDs []stri
 	if len(userIDs) == 0 {
 		return nil
 	}
-	
+
 	return d.db.WithContext(ctx).Model(&model.UserMembership{}).
 		Where("user_id IN ?", userIDs).
 		Updates(map[string]interface{}{
@@ -561,7 +524,7 @@ func (d *MembershipDAO) BatchSetUserQuotas(ctx context.Context, userIDs []string
 	if len(userIDs) == 0 {
 		return nil
 	}
-	
+
 	return d.db.WithContext(ctx).Model(&model.UserMembership{}).
 		Where("user_id IN ?", userIDs).
 		Updates(map[string]interface{}{

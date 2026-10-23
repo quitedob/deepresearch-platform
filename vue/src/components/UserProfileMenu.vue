@@ -22,7 +22,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useChatStore } from '@/store';
 
-const props = defineProps({ currentTheme: String });
+defineProps({ currentTheme: String });
 const emit = defineEmits(['toggle-theme']);
 const router = useRouter();
 const isMenuOpen = ref(false);
@@ -31,9 +31,6 @@ const chatStore = useChatStore();
 
 // 本地主题状态
 const localTheme = ref(localStorage.getItem('app-theme') || 'dark');
-
-// 使用本地状态或props
-const currentTheme = computed(() => props.currentTheme || localTheme.value);
 
 // 计算用户信息和管理员权限
 const currentUser = computed(() => {
@@ -44,10 +41,6 @@ const currentUser = computed(() => {
     console.error('[UserProfileMenu] 解析用户信息失败:', error);
     return null;
   }
-});
-
-const isAdmin = computed(() => {
-  return currentUser.value?.role === 'admin';
 });
 
 const userInitial = computed(() => {

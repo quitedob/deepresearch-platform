@@ -282,6 +282,10 @@ func deductResearchQuotaCounterTx(
 		return nil, "", 0, 0, fmt.Errorf("lock membership: %w", err)
 	}
 
+	// The lock also protects expiry normalization, so parallel submissions cannot
+	// each reset and spend the newly available free quota.
+	expirePremiumMembership(&membership, now)
+
 	counterName := "research_used"
 	limit := membership.ResearchLimit
 	used := membership.ResearchUsed

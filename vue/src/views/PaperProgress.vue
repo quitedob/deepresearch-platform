@@ -177,7 +177,7 @@ onMounted(async () => {
   }
 
   // 启动 SSE
-  closeSSE = createPaperSSE(paperId, handleEvent, (err) => {
+  closeSSE = createPaperSSE(paperId, handleEvent, () => {
     toast.error('进度连接断开，请刷新页面')
   })
 

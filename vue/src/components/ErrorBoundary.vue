@@ -125,7 +125,7 @@ const props = defineProps({
 const hasError = ref(false)
 const error = ref(null)
 const errorInfo = ref(null)
-const retryCount = ref(0)
+const retryAttempts = ref(0)
 
 // 报告模态框
 const showReportModal = ref(false)
@@ -229,7 +229,7 @@ const iconClass = computed(() => {
 })
 
 const canRetry = computed(() => {
-  return retryCount.value < props.retryCount
+  return retryAttempts.value < props.retryCount
 })
 
 const canRefresh = computed(() => {
@@ -269,13 +269,13 @@ const handleError = (err, instance, info) => {
 const retry = () => {
   if (!canRetry.value) return
 
-  retryCount.value++
+  retryAttempts.value++
   hasError.value = false
   error.value = null
   errorInfo.value = null
 
   // 重新渲染组件
-  console.log(`Retrying... (${retryCount.value}/${props.retryCount})`)
+  console.log(`Retrying... (${retryAttempts.value}/${props.retryCount})`)
 }
 
 const refresh = () => {

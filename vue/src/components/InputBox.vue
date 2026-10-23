@@ -1,5 +1,6 @@
 <template>
   <div class="input-box-container">
+    <p v-if="isDeepResearchMode" class="research-config-hint">深度研究使用服务器配置的模型和工具。</p>
     <div class="main-input-wrapper">
       <div class="text-area-wrapper">
         <textarea
@@ -341,18 +342,6 @@ const autoGrowTextarea = () => {
   }
 };
 
-// 处理研究完成
-const handleResearchComplete = (report) => {
-  // 清空输入框
-  inputText.value = '';
-  emit('research-complete', report);
-};
-
-// 处理研究错误
-const handleResearchError = (error) => {
-  emit('research-error', error);
-};
-
 const toggleAttachmentMenu = () => {
   isAttachmentMenuOpen.value = !isAttachmentMenuOpen.value;
 };
@@ -417,6 +406,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.research-config-hint {
+  margin: 0 0 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
 .input-box-container {
   background-color: var(--input-bg);
   padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);

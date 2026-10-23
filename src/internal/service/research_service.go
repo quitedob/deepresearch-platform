@@ -283,6 +283,7 @@ func (s *ResearchService) saveResearchResult(ctx context.Context, session *model
 			}
 		}
 		metadata := map[string]interface{}{"tools_used": result.ToolsUsed, "execution_time": result.ExecutionTime, "confidence_score": result.ConfidenceScore, "source_count": result.SourceCount}
+		metadata["evidence"] = researchResultEvidence(result)
 		if result.StructuredReport != nil {
 			metadata["has_structured_report"] = true
 			metadata["conclusions_count"] = len(result.StructuredReport.Structured.Conclusions)
@@ -310,14 +311,9 @@ func (s *ResearchService) saveResearchResult(ctx context.Context, session *model
 	})
 }
 
-// sendCompletedEvent 发送研究完成事件
-func (s *ResearchService) sendCompletedEvent(session *models.ResearchSession, result *agent.Result) {
-	if s.eventStream == nil {
-		return
-	}
-
+func researchResultEvidence(result *agent.Result) []map[string]interface{} {
 	evidence := make([]map[string]interface{}, 0)
-	for i, step := range result.Steps {
+	for stepIndex, step := range result.Steps {
 		if step.Phase == "searching" && step.Observation != "" {
 			evidence = append(evidence, map[string]interface{}{
 				"id":               fmt.Sprintf("evidence_%d", len(evidence)+1),
@@ -326,9 +322,17 @@ func (s *ResearchService) sendCompletedEvent(session *models.ResearchSession, re
 				"content":          step.Observation,
 				"relevance_score":  step.Quality,
 				"confidence_score": result.ConfidenceScore,
-				"step_number":      i + 1,
+				"step_number":      stepIndex + 1,
 			})
 		}
+	}
+	return evidence
+}
+
+// sendCompletedEvent 发送研究完成事件
+func (s *ResearchService) sendCompletedEvent(session *models.ResearchSession, result *agent.Result) {
+	if s.eventStream == nil {
+		return
 	}
 
 	completedData := map[string]interface{}{
@@ -337,7 +341,7 @@ func (s *ResearchService) sendCompletedEvent(session *models.ResearchSession, re
 		"session_id":  session.ID,
 		"metadata": map[string]interface{}{
 			"type":             "research",
-			"evidence":         evidence,
+			"evidence":         researchResultEvidence(result),
 			"tools_used":       result.ToolsUsed,
 			"execution_time":   result.ExecutionTime,
 			"confidence_score": result.ConfidenceScore,
@@ -391,15 +395,6 @@ func (s *ResearchService) GetSession(ctx context.Context, sessionID string) (*mo
 
 	_ = s.cache.Set(ctx, cacheKey, session, 2*time.Minute)
 	return session, nil
-}
-
-// StreamProgress creates a stream for research progress updates
-func (s *ResearchService) StreamProgress(ctx context.Context, sessionID string) (<-chan *ResearchEvent, error) {
-	_, err := s.GetSession(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("session not found: %w", err)
-	}
-	return s.eventStream.CreateStream(sessionID), nil
 }
 
 // GetResults retrieves the research results for a session

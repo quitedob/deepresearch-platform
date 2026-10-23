@@ -37,10 +37,10 @@ import MemorySettings from './settings/MemorySettings.vue';
 import HelpCenter from './HelpCenter.vue';
 
 // Props 和 Emits 用于主题切换
-const props = defineProps({
+defineProps({
   currentTheme: String
 });
-const emit = defineEmits(['toggle-theme']);
+defineEmits(['toggle-theme']);
 
 const chatStore = useChatStore();
 const currentSection = ref('general'); // 默认显示通用设置

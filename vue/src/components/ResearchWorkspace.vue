@@ -3,7 +3,7 @@
     <div class="workspace-header">
       <div class="header-left">
         <h2>深度研究工作台</h2>
-        <p>基于AI的智能研究和分析平台</p>
+        <p>深度研究使用服务器配置的模型和工具</p>
       </div>
       <div class="header-right">
         <div class="workspace-status">
@@ -324,11 +324,7 @@ const startResearch = async () => {
     // 使用实际 API 启动研究
     const response = await researchAPI.startResearch({
       query: researchQuery.value,
-      research_type: researchType.value,
-      llm_config: {
-        provider: localStorage.getItem('defaultProvider') || undefined,
-        model: localStorage.getItem('defaultModel') || undefined
-      }
+      research_type: researchType.value
     })
 
     if (response && response.success) {

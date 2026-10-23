@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { API_BASE_URL, REQUEST_TIMEOUT } from '@/utils/config'
-import { getAuthToken, clearTokens } from '@/utils/token'
+import { getAuthToken } from '@/utils/token'
+import { handleAuthenticationFailure } from '@/utils/authFailure'
 
 // 创建axios实例
 const apiClient = axios.create({
@@ -69,24 +70,7 @@ apiClient.interceptors.response.use(
     friendlyError.response = error.response
     friendlyError.originalError = error
     
-    // 处理401错误
-    if (error.response?.status === 401) {
-      // 判断是否是登录页面的认证失败（密码错误），而非 token 失效或账户被禁用
-      const isLoginPageError = errorMessage.includes('密码') && window.location.pathname.includes('/login')
-      
-      if (!isLoginPageError) {
-        // P1 修复：被禁用用户也需要清除 token 并跳转登录
-        // 区别：禁用用户跳转时携带提示信息，而非静默跳转
-        clearTokens()
-        if (!window.location.pathname.includes('/login')) {
-          const isBanned = errorMessage.includes('禁用') || errorMessage.includes('账户')
-          const redirectUrl = isBanned
-            ? `/login?reason=banned&msg=${encodeURIComponent(errorMessage)}`
-            : '/login'
-          window.location.href = redirectUrl
-        }
-      }
-    }
+    handleAuthenticationFailure(error.response)
     
     return Promise.reject(friendlyError)
   }

@@ -21,12 +21,6 @@ export const useResearchStore = defineStore('research', () => {
   // 研究配置
   const researchConfig = ref({
     type: 'deep',
-    maxSources: 20,
-    maxIterations: 10,
-    enableCache: true,
-    llmProvider: 'deepseek',
-    llmModel: 'deepseek-chat',
-    tools: ['web_search', 'arxiv', 'wikipedia'],
     language: 'zh-CN'
   })
   
@@ -114,16 +108,6 @@ export const useResearchStore = defineStore('research', () => {
       const researchData = {
         query,
         research_type: config.type || researchConfig.value.type,
-        llm_config: {
-          provider: config.llmProvider || researchConfig.value.llmProvider,
-          model: config.llmModel || researchConfig.value.llmModel
-        },
-        tools_config: {
-          enabled_tools: config.tools || researchConfig.value.tools,
-          max_sources: config.maxSources || researchConfig.value.maxSources,
-          max_iterations: config.maxIterations || researchConfig.value.maxIterations,
-          enable_cache: config.enableCache ?? researchConfig.value.enableCache
-        },
         options: {
           language: config.language || researchConfig.value.language,
           output_format: 'structured',

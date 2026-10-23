@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -254,7 +255,6 @@ func (api *ResearchAPI) GetResearchStatus(c *gin.Context) {
 	})
 }
 
-
 // 研究会话查询的最大限制
 const maxResearchSessionLimit = 100
 
@@ -371,8 +371,8 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate") // P0: 防止代理/日志缓存含token的URL
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
-	c.Header("Referrer-Policy", "no-referrer")                       // P0: 防止token通过Referer头泄露
-	c.Header("Content-Security-Policy", "default-src 'none'")        // SSE不需要加载任何资源
+	c.Header("Referrer-Policy", "no-referrer")                // P0: 防止token通过Referer头泄露
+	c.Header("Content-Security-Policy", "default-src 'none'") // SSE不需要加载任何资源
 
 	c.SSEvent("message", gin.H{"type": "connected", "session_id": sessionID})
 	c.Writer.Flush()
@@ -384,14 +384,14 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 	if api.researchService != nil {
 		streamChan, err := api.researchService.StreamProgress(streamCtx, sessionID)
 		if err != nil {
-			c.SSEvent("error", gin.H{"error": err.Error()})
+			c.SSEvent("message", gin.H{"type": "failed", "error": err.Error()})
 			c.Writer.Flush()
 			return
 		}
 
 		// 监听客户端断开
 		clientGone := c.Request.Context().Done()
-		
+
 		// 创建心跳定时器，每30秒发送一次心跳保持连接
 		heartbeatTicker := time.NewTicker(30 * time.Second)
 		defer heartbeatTicker.Stop()
@@ -426,22 +426,22 @@ func (api *ResearchAPI) StreamResearchProgress(c *gin.Context) {
 					// 从 event.Data 中获取报告内容和 metadata
 					reportText := ""
 					var metadata map[string]interface{}
-					
+
 					if event.Data != nil {
 						if rt, ok := event.Data["report_text"].(string); ok {
 							reportText = rt
 						}
 						// 获取嵌套的 metadata
 						if md, ok := event.Data["metadata"].(map[string]interface{}); ok {
-							metadata = md
+							metadata = maps.Clone(md)
 						}
 					}
-					
+
 					if metadata == nil {
 						metadata = make(map[string]interface{})
 					}
 					metadata["session_id"] = sessionID
-					
+
 					c.SSEvent("message", gin.H{
 						"type": "completed",
 						"data": gin.H{
@@ -589,4 +589,3 @@ func (api *ResearchAPI) GetResearchStatistics(c *gin.Context) {
 		},
 	})
 }
-

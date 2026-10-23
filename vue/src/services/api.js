@@ -3,6 +3,8 @@
  */
 
 import axios from 'axios'
+import { researchAPI } from '@/api/index'
+import { handleAuthenticationFailure } from '@/utils/authFailure'
 
 // 创建axios实例
 const api = axios.create({
@@ -32,13 +34,9 @@ api.interceptors.response.use(
   (error) => {
     if (error.response) {
       const { status, data } = error.response
+      handleAuthenticationFailure(error.response)
       
       switch (status) {
-        case 401:
-          localStorage.removeItem('auth_token')
-          sessionStorage.removeItem('auth_token')
-          window.location.href = '/login'
-          break
         case 403:
           console.error('权限不足')
           break
@@ -215,7 +213,7 @@ export class ChatService {
 // 研究服务
 export class ResearchService {
   async startResearch(researchData) {
-    return api.post('/research/start', researchData)
+    return researchAPI.startResearch(researchData)
   }
 
   async getResearchStatus(sessionId) {

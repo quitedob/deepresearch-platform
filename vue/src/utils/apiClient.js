@@ -3,6 +3,7 @@
  */
 
 import axios from 'axios'
+import { handleAuthenticationFailure } from './authFailure'
 
 // 创建axios实例
 export const apiClient = axios.create({
@@ -37,15 +38,9 @@ apiClient.interceptors.response.use(
     if (error.response) {
       const { status, data } = error.response
 
-      // 处理401未授权
-      if (status === 401) {
-        localStorage.removeItem('auth_token')
-        sessionStorage.removeItem('auth_token')
-
-        // 如果不在登录页，跳转到登录页
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
-        }
+      // 处理无效凭据和已禁用账户
+      if (handleAuthenticationFailure(error.response)) {
+        clearAuth()
       }
 
       // 返回错误信息
@@ -112,8 +107,16 @@ export function createSSEConnection(url, options = {}) {
 
   const abortController = new AbortController()
   const { onMessage, onError, onComplete } = options
+  const connection = {
+    readyState: 0,
+    onmessage: null,
+    onerror: null,
+    abort: () => abortController.abort(),
+    close: () => abortController.abort()
+  }
 
   const fetchStream = async () => {
+    let reader
     try {
       const response = await fetch(fullURL, {
         method: 'GET',
@@ -127,12 +130,15 @@ export function createSSEConnection(url, options = {}) {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
+        handleAuthenticationFailure({ status: response.status, data: errorData })
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
-      const reader = response.body.getReader()
+      connection.readyState = 1
+      reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let receivedTerminalEvent = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -143,31 +149,39 @@ export function createSSEConnection(url, options = {}) {
         buffer = lines.pop() || ''
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith('data:')) {
             try {
-              const data = JSON.parse(line.slice(6))
+              const data = JSON.parse(line.slice(5).trimStart())
+              receivedTerminalEvent ||= ['completed', 'failed', 'error', 'timeout'].includes(data.type)
               onMessage?.(data)
-            } catch (e) {
+              connection.onmessage?.({ data: JSON.stringify(data) })
+            } catch (error) {
               // 忽略解析错误
             }
           }
         }
       }
 
+      if (!receivedTerminalEvent && !abortController.signal.aborted) {
+        throw new Error('研究事件连接意外关闭，请重新连接')
+      }
       onComplete?.()
     } catch (error) {
       if (error.name !== 'AbortError') {
         onError?.(error)
+        connection.onerror?.(error)
+      }
+    } finally {
+      connection.readyState = 2
+      if (reader) {
+        await reader.cancel().catch(() => {})
       }
     }
   }
 
-  fetchStream()
+  Promise.resolve().then(fetchStream)
 
-  return {
-    abort: () => abortController.abort(),
-    close: () => abortController.abort()
-  }
+  return connection
 }
 
 // 发送流式请求

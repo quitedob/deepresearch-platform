@@ -3,28 +3,30 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/ai-research-platform/internal/pkg/eino"
-	einotool "github.com/ai-research-platform/internal/pkg/eino/tool"
 	"github.com/ai-research-platform/internal/middleware"
 	"github.com/ai-research-platform/internal/pkg"
+	"github.com/ai-research-platform/internal/pkg/eino"
+	einotool "github.com/ai-research-platform/internal/pkg/eino/tool"
 	"github.com/ai-research-platform/internal/repository/dao"
 	"github.com/ai-research-platform/internal/repository/model"
 	"github.com/ai-research-platform/internal/types/constant"
+	"github.com/gin-gonic/gin"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // AIQuestionAPI AI题目生成API
 type AIQuestionAPI struct {
-	llmScheduler    *eino.LLMScheduler
-	aiQuestionDAO   *dao.AIQuestionDAO
-	webSearchTool   *einotool.WebSearchTool
+	llmScheduler  *eino.LLMScheduler
+	aiQuestionDAO *dao.AIQuestionDAO
+	webSearchTool *einotool.WebSearchTool
 }
 
 // NewAIQuestionAPI 创建AI题目生成API
@@ -49,14 +51,14 @@ type GenerateQuestionsRequest struct {
 	Prompt       string           `json:"prompt" binding:"required"`
 	Provider     string           `json:"provider"`
 	Model        string           `json:"model"`
-	SessionID    string           `json:"session_id"`    // 可选，用于关联会话
-	History      []HistoryMessage `json:"history"`       // 对话历史
+	SessionID    string           `json:"session_id"`     // 可选，用于关联会话
+	History      []HistoryMessage `json:"history"`        // 对话历史
 	UseWebSearch bool             `json:"use_web_search"` // 是否使用网络搜索
 }
 
 // HistoryMessage 历史消息
 type HistoryMessage struct {
-	Role    string `json:"role"`    // user, assistant
+	Role    string `json:"role"` // user, assistant
 	Content string `json:"content"`
 }
 
@@ -136,6 +138,32 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 		return
 	}
 
+	userID, authErr := middleware.RequireAuth(c)
+	if authErr != nil || userID == "" {
+		pkg.Unauthorized(c, "请先登录")
+		return
+	}
+	// Authorize the target before any model call, search, or persistence.
+	if req.SessionID != "" {
+		if a.aiQuestionDAO == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "error": "会话服务未配置"})
+			return
+		}
+		session, err := a.aiQuestionDAO.GetSessionByID(c.Request.Context(), req.SessionID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			pkg.NotFound(c, "会话不存在")
+			return
+		}
+		if err != nil {
+			pkg.InternalError(c, "无法读取会话")
+			return
+		}
+		if session.UserID != userID {
+			pkg.Forbidden(c, "无权访问此会话")
+			return
+		}
+	}
+
 	if a.llmScheduler == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"success": false,
@@ -143,9 +171,6 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 		})
 		return
 	}
-
-	// 获取用户ID（如果有认证）
-	userID, _ := middleware.RequireAuth(c)
 
 	// 选择模型和provider
 	modelName := req.Model
@@ -168,7 +193,7 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 			searchArgs, _ := json.Marshal(map[string]string{"query": searchQuery})
 			searchResult, err := a.webSearchTool.InvokableRun(searchCtx, string(searchArgs))
 			searchCancel()
-			
+
 			if err != nil {
 				// 搜索失败时继续生成题目
 			} else if searchResult != "" {
@@ -183,7 +208,7 @@ func (a *AIQuestionAPI) GenerateQuestions(c *gin.Context) {
 
 	// 构建系统提示 - 包含JSON格式要求
 	systemPrompt := buildSystemPrompt()
-	
+
 	// 如果有搜索结果，添加到系统提示中
 	if searchContext != "" {
 		systemPrompt = systemPrompt + "\n\n## 参考资料（来自网络搜索）\n" + searchContext + "\n\n请基于以上参考资料生成准确、专业的题目。确保题目内容与最新知识保持一致。"
@@ -427,28 +452,28 @@ func buildSystemPrompt() string {
 func extractSearchQuery(prompt string) string {
 	// 移除常见的指令词，提取核心主题
 	prompt = strings.ToLower(prompt)
-	
+
 	// 移除数量词
 	removePatterns := []string{
 		"生成", "出", "道", "个", "题", "单选题", "多选题", "判断题", "简答题",
 		"关于", "有关", "的", "请", "帮我", "我想要", "难度", "简单", "中等", "困难",
 		"easy", "medium", "hard", "questions", "question", "generate",
 	}
-	
+
 	result := prompt
 	for _, pattern := range removePatterns {
 		result = strings.ReplaceAll(result, pattern, " ")
 	}
-	
+
 	// 清理多余空格
 	result = strings.Join(strings.Fields(result), " ")
 	result = strings.TrimSpace(result)
-	
+
 	// 如果提取后太短，使用原始提示
 	if len(result) < 2 {
 		return prompt
 	}
-	
+
 	return result
 }
 

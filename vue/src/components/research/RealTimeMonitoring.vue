@@ -571,7 +571,6 @@ export default {
     const generateAgentActivities = () => {
       // Generate simulated agent activities based on current agents
       const agents = orchestratorStore.agents
-      const tasks = orchestratorStore.tasks
 
       agents.forEach(agent => {
         if (agent.status === 'working') {

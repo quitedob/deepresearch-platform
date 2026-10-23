@@ -614,12 +614,6 @@ const totalPages = computed(() => {
   return Math.ceil(filteredHistory.value.length / pageSize.value)
 })
 
-const paginatedHistory = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return filteredHistory.value.slice(start, end)
-})
-
 // 方法
 const moderateText = async () => {
   if (!textInput.value.trim()) return

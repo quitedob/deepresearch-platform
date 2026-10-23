@@ -344,7 +344,7 @@ const uploadSingleFileItem = async (fileItem) => {
 const uploadMultipleFileItems = async (fileItems) => {
   const formData = new FormData()
   
-  fileItems.forEach((fileItem, index) => {
+  fileItems.forEach((fileItem) => {
     fileItem.status = 'uploading'
     fileItem.progress = 0
     formData.append('files', fileItem.file)
@@ -768,4 +768,4 @@ defineExpose({
     padding: 12px;
   }
 }
-</style> 
+</style>

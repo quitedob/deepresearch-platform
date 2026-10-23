@@ -29,7 +29,7 @@
         </div>
 
         <!-- Standard Content Display -->
-        <div v-else class="message-text" v-html="formattedContent" @click="handleCitationClick"></div>
+        <div v-else class="message-text" v-html="formattedContent" @click="handleMessageClick"></div>
       </div>
 
       <!-- Citation Panel (Gemini-style) -->
@@ -327,7 +327,6 @@ import markdownit from 'markdown-it';
 // 反馈API暂时禁用，等待后端实现
 // import { feedbackAPI } from '@/services/api.js';
 import hljs from 'highlight.js';
-import EvidenceChain from '@/components/EvidenceChain.vue';
 import toast from '@/utils/toast';
 
 const props = defineProps({
@@ -350,9 +349,6 @@ const citations = ref([]);
 
 // 证据展开状态
 const evidenceExpanded = ref(false);
-const evidenceCount = computed(() => {
-  return props.message.metadata?.evidence?.length || 0;
-});
 
 // 切换证据展开状态
 const toggleEvidenceExpanded = () => {
@@ -454,10 +450,12 @@ const md = markdownit({
     if (lang && hljs.getLanguage(lang)) {
       try {
         const highlighted = hljs.highlight(str, { language: lang, ignoreIllegals: true }).value;
-        return `<pre class="hljs" data-lang="${lang}"><code>${highlighted}</code><button class="copy-code-btn" onclick="(function(btn){var t=btn.parentElement.querySelector('code').textContent;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(function(){});}else{var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);}})(this)">复制</button></pre>`;
-      } catch (__) {}
+        return `<pre class="hljs" data-lang="${md.utils.escapeHtml(lang)}"><code>${highlighted}</code><button type="button" class="copy-code-btn">复制</button></pre>`;
+      } catch (error) {
+        // Fall back to escaped plain text when highlighting fails.
+      }
     }
-    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code><button class="copy-code-btn" onclick="(function(btn){var t=btn.parentElement.querySelector('code').textContent;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(function(){});}else{var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.select();document.execCommand('copy');document.body.removeChild(a);}})(this)">复制</button></pre>`;
+    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code><button type="button" class="copy-code-btn">复制</button></pre>`;
   }
 });
 
@@ -466,7 +464,7 @@ const processLatex = (content) => {
   // 处理块级公式 $$...$$
   content = content.replace(/\$\$([\s\S]*?)\$\$/g, '<div class="latex-block">$$$$1$$</div>');
   // 处理行内公式 $...$
-  content = content.replace(/\$([^\$\n]+?)\$/g, '<span class="latex-inline">$$$1$</span>');
+  content = content.replace(/\$([^$\n]+?)\$/g, '<span class="latex-inline">$$$1$</span>');
   return content;
 };
 
@@ -497,8 +495,7 @@ const formattedContent = computed(() => {
   return rendered;
 });
 
-const copyContent = async () => {
-  const text = props.message.content;
+const copyText = async (text) => {
   try {
     await navigator.clipboard.writeText(text);
     toast.success('已复制到剪贴板');
@@ -511,8 +508,11 @@ const copyContent = async () => {
       textarea.style.opacity = '0';
       document.body.appendChild(textarea);
       textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
+      try {
+        if (!document.execCommand('copy')) throw new Error('Clipboard copy was rejected');
+      } finally {
+        textarea.remove();
+      }
       toast.success('已复制到剪贴板');
     } catch (fallbackErr) {
       console.error('Failed to copy: ', fallbackErr);
@@ -522,6 +522,19 @@ const copyContent = async () => {
 };
 
 // 反馈提交方法
+const copyContent = () => copyText(props.message.content);
+
+const handleMessageClick = async (event) => {
+  const copyButton = event.target.closest('button.copy-code-btn');
+  if (copyButton && event.currentTarget.contains(copyButton)) {
+    const code = copyButton.closest('pre')?.querySelector('code');
+    if (code) await copyText(code.textContent);
+    return;
+  }
+  const citation = event.target.closest('[data-citation]');
+  if (citation && event.currentTarget.contains(citation)) showCitation(citation.dataset.citation);
+};
+
 const submitFeedback = async (rating) => {
   if (feedbackLoading.value) return;
 
@@ -545,28 +558,9 @@ const submitFeedback = async (rating) => {
   }
 };
 
-// 删除反馈方法
-const deleteFeedback = async () => {
-  localFeedback.value = null;
-};
-
 // 初始化时加载已有的反馈状态（暂时跳过，等待后端实现）
 const loadExistingFeedback = async () => {
   // 后端反馈API尚未实现，跳过加载
-};
-
-// 获取当前用户ID的辅助函数
-const getCurrentUserId = () => {
-  const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
-  if (userStr) {
-    try {
-      const user = JSON.parse(userStr);
-      return user.id;
-    } catch (e) {
-      console.warn('解析用户信息失败:', e);
-    }
-  }
-  return null;
 };
 
 // 组件挂载时加载已有反馈
@@ -654,7 +648,6 @@ const formatContentWithCitations = (content) => {
   let formattedContent = content;
   citations.value.forEach((citation, index) => {
     const citationNumber = index + 1;
-    const citationMark = `[${citationNumber}]`;
     formattedContent = formattedContent.replace(
       new RegExp(`\\[${citationNumber}\\]`, 'g'),
       `<sup class="citation-mark" data-citation="${citation.id}">[${citationNumber}]</sup>`

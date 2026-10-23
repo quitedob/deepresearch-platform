@@ -169,7 +169,6 @@ const confirmSummarize = async () => {
       });
       
       showLimitWarning.value = false;
-      const summaryPreview = result.summary ? result.summary.substring(0, 200) + '...' : '无';
       toast.success('已创建新对话，上一对话总结已保存。');
     }
   } catch (error) {

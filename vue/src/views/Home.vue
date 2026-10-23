@@ -47,7 +47,7 @@ import InputBox from '@/components/InputBox.vue';
 import { chatAPI } from '@/api/index';
 import { getProviders } from '@/api/model';
 import { API_BASE_URL, DEFAULT_MODEL, DEFAULT_PROVIDER, RESEARCH_CONFIG } from '@/utils/config';
-import { isWithinDays } from '@/utils/timeFormat';
+import { createSSEConnection } from '@/utils/apiClient';
 import { getAuthToken } from '@/utils/token';
 import toast from '@/utils/toast';
 import logger from '@/utils/logger';
@@ -130,20 +130,6 @@ const markRequestStart = () => {
  */
 const markRequestEnd = () => {
   isRequestPending.value = false;
-};
-
-/**
- * 验证消息是否属于当前会话
- */
-const validateMessageSession = (messageId, expectedSessionId) => {
-  const message = chatStore.messages.find(m => m.id === messageId);
-  if (!message) return false;
-  // 如果消息有sessionId属性，验证它
-  if (message.sessionId && message.sessionId !== expectedSessionId) {
-    logger.warn('[Home] 消息不属于当前会话');
-    return false;
-  }
-  return true;
 };
 
 // 监听会话切换，清理进行中的请求
@@ -459,28 +445,28 @@ const handleSendResearch = async (text) => {
   chatStore.setTypingStatus(true);
 
   try {
-    const modelName = chatStore.currentModel || DEFAULT_MODEL;
-    const provider = chatStore.currentProvider || getProviderFromModel(modelName);
-
     const researchResponse = await researchAPI.startResearch({
       query: text,
-      research_type: 'comprehensive',
-      sources: ['web', 'academic'],
-      include_images: false,
-      llm_config: {
-        provider: provider,
-        model: modelName
-      }
+      research_type: 'comprehensive'
     });
 
     if (researchResponse.success) {
       chatStore.setResearchMode(true, researchResponse.session_id);
 
-      // ✅ 使用 SSE 监听后端推送，传递token作为查询参数
-      const token = getAuthToken();
-      const eventSource = new EventSource(
-        `${API_BASE_URL}/research/stream/${researchResponse.session_id}?token=${encodeURIComponent(token)}`
+      // 使用 Authorization header 建立 SSE，避免令牌进入 URL 和代理日志
+      const eventSource = createSSEConnection(
+        `${API_BASE_URL}/research/stream/${researchResponse.session_id}`
       );
+      let activeEventSource = eventSource;
+      let timeoutId;
+      const cleanupEventSource = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (activeEventSource && activeEventSource.readyState !== 2) {
+          activeEventSource.close();
+        }
+      };
 
       eventSource.onmessage = async (event) => {
         try {
@@ -548,7 +534,7 @@ const handleSendResearch = async (text) => {
           }
           else if (data.type === 'completed') {
             logger.log('✓ 研究完成，收到最终报告');
-            eventSource.close();
+            cleanupEventSource();
             
             // ✅ 直接使用后端生成的完整报告文本
             const responseData = data.data;
@@ -567,9 +553,9 @@ const handleSendResearch = async (text) => {
             chatStore.setTypingStatus(false);
             chatStore.setResearchMode(false, null);
           }
-          else if (data.type === 'failed' || data.type === 'error') {
+          else if (data.type === 'failed' || data.type === 'error' || data.type === 'timeout') {
             logger.error('✗ 研究失败:', data.error);
-            eventSource.close();
+            cleanupEventSource();
             
             chatStore.updateMessageContent({
               messageId: assistantMessageId,
@@ -588,8 +574,7 @@ const handleSendResearch = async (text) => {
       const MAX_RECONNECT_ATTEMPTS = 3;
       const RECONNECT_DELAY_MS = 2000;
 
-      // Use a mutable ref so reconnection can swap the active EventSource
-      let activeEventSource = eventSource;
+      // Use a mutable ref so reconnection can swap the active stream
 
       eventSource.onerror = (error) => {
         logger.error('SSE 连接错误:', error);
@@ -607,14 +592,13 @@ const handleSendResearch = async (text) => {
           
           // 延迟后尝试重连
           setTimeout(() => {
-            if (chatStore.isTyping && activeEventSource.readyState === EventSource.CLOSED) {
+            if (chatStore.isTyping && activeEventSource.readyState === 2) {
               // Close old connection cleanly
               activeEventSource.close();
               
-              // Create a fresh EventSource connection
-              const reconnectToken = getAuthToken();
-              const newEventSource = new EventSource(
-                `${API_BASE_URL}/research/stream/${researchResponse.session_id}?token=${encodeURIComponent(reconnectToken)}`
+              // Create a fresh header-authenticated stream connection
+              const newEventSource = createSSEConnection(
+                `${API_BASE_URL}/research/stream/${researchResponse.session_id}`
               );
               // Re-attach handlers to the new connection
               newEventSource.onmessage = activeEventSource.onmessage;
@@ -637,7 +621,7 @@ const handleSendResearch = async (text) => {
       };
 
       // ✅ 增加超时时间到 30 分钟，研究可能需要较长时间
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         logger.warn('⚠️ 研究超时（30分钟）');
         cleanupEventSource();
         if (chatStore.isTyping) {
@@ -650,21 +634,6 @@ const handleSendResearch = async (text) => {
         }
       }, RESEARCH_CONFIG.TIMEOUT_MS);
 
-      // ✅ 统一的EventSource清理函数
-      const cleanupEventSource = () => {
-        clearTimeout(timeoutId);
-        if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
-          eventSource.close();
-        }
-      };
-
-      // ✅ 在连接关闭时清除超时
-      const originalClose = eventSource.close.bind(eventSource);
-      eventSource.close = () => {
-        clearTimeout(timeoutId);
-        originalClose();
-      };
-      
       // ✅ 组件卸载时清理（通过存储引用）
       // 将清理函数存储到store，以便组件卸载时调用
       chatStore._researchCleanup = cleanupEventSource;

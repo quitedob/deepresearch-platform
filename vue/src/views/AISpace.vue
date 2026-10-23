@@ -650,11 +650,12 @@ const checkAnswer = (questionId) => {
     case 'single':
       question.isCorrect = question.userAnswer === question.correctAnswer;
       break;
-    case 'multiple':
+    case 'multiple': {
       const userAnswers = Array.isArray(question.userAnswer) ? question.userAnswer.sort() : [];
       const correctAnswers = Array.isArray(question.correctAnswer) ? question.correctAnswer.sort() : [];
       question.isCorrect = JSON.stringify(userAnswers) === JSON.stringify(correctAnswers);
       break;
+    }
     case 'judge':
       question.isCorrect = question.userAnswer === question.correctAnswer;
       break;

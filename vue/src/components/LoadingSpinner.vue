@@ -137,13 +137,13 @@ const pulseStyle = computed(() => ({
 const barStyle = (index) => ({
   backgroundColor: props.color,
   animationDelay: `${index * 0.1}s`
-}))
+})
 
 // 计算涟漪样式
 const rippleStyle = (index) => ({
   borderColor: props.color,
   animationDelay: `${index * 0.3}s`
-}))
+})
 </script>
 
 <style scoped>

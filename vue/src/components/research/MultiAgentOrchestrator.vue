@@ -608,7 +608,7 @@ export default {
       }
     }
 
-    const editTask = (task) => {
+    const editTask = () => {
       // Open task editing modal
       notificationStore.showInfo('Task editing coming soon')
     }

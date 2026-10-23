@@ -1,4 +1,4 @@
-﻿// src/store/index.js
+// src/store/index.js
 import { defineStore } from 'pinia'
 import { chatAPI, healthAPI } from '@/api/index'
 import logger from '@/utils/logger'
@@ -27,7 +27,7 @@ function parseAPIError(error) {
   if (error.code === 'ERR_NETWORK') {
     return {
       code: 'ERR_NETWORK',
-      message: '网络连接失败，请检查网络设�?,
+      message: '网络连接失败，请检查网络设置',
       httpStatus: 0,
       suggestion: 'check_network'
     }
@@ -53,7 +53,8 @@ function parseAPIError(error) {
 }
 
 /**
- * 根据错误码获取建议操�? */
+ * 根据错误码获取建议操作
+ */
 function getSuggestionForError(errorCode) {
   const suggestions = {
     'ERR_UNAUTHORIZED': 'relogin',
@@ -76,22 +77,22 @@ function getErrorUserMessage(errorCode, defaultMessage) {
   const errorMessages = {
     'ERR_UNAUTHORIZED': '请先登录后再操作',
     'ERR_FORBIDDEN': '您没有权限执行此操作',
-    'ERR_TOKEN_EXPIRED': '登录已过期，请重新登�?,
+    'ERR_TOKEN_EXPIRED': '登录已过期，请重新登录',
     'ERR_SESSION_NOT_FOUND': '会话不存在或已被删除',
     'ERR_SESSION_FORBIDDEN': '您无权访问此会话',
     'ERR_CHAT_QUOTA_EXCEEDED': '聊天次数已用完，请升级会员或等待配额重置',
     'ERR_RESEARCH_QUOTA_EXCEEDED': '深度研究次数已用完，请升级会员或等待配额重置',
-    'ERR_CONTEXT_OVERFLOW': '对话上下文过长，建议创建新会话继续对�?,
-    'ERR_MESSAGE_TOO_LONG': '消息内容过长，请精简后重�?,
+    'ERR_CONTEXT_OVERFLOW': '对话上下文过长，建议创建新会话继续对话',
+    'ERR_MESSAGE_TOO_LONG': '消息内容过长，请精简后重试',
     'ERR_MODEL_NOT_SUPPORTED': '当前模型暂不可用，请切换其他模型',
-    'ERR_LLM_UNAVAILABLE': 'AI服务暂时不可用，请稍后重�?,
+    'ERR_LLM_UNAVAILABLE': 'AI服务暂时不可用，请稍后重试',
     'ERR_LLM_TIMEOUT': 'AI响应超时，请稍后重试',
     'ERR_LLM_ERROR': 'AI服务调用失败，请稍后重试',
     'ERR_RATE_LIMIT_EXCEEDED': '请求过于频繁，请稍后重试',
-    'ERR_NETWORK': '网络连接失败，请检查网络设�?,
+    'ERR_NETWORK': '网络连接失败，请检查网络设置',
     'ERR_TIMEOUT': '请求超时，请稍后重试',
-    'ERR_INTERNAL_ERROR': '服务器内部错误，请稍后重�?,
-    'ERR_INVALID_REQUEST': '请求参数无效，请检查输�?,
+    'ERR_INTERNAL_ERROR': '服务器内部错误，请稍后重试',
+    'ERR_INVALID_REQUEST': '请求参数无效，请检查输入',
     'ERR_MISSING_PARAMETER': '缺少必要参数',
   }
   return errorMessages[errorCode] || defaultMessage
@@ -100,19 +101,21 @@ function getErrorUserMessage(errorCode, defaultMessage) {
 export const useChatStore = defineStore('chat', {
   state: () => ({
     // ========== 模型配置 ==========
-    // 初始化时�?localStorage 加载，确保刷新后保持选择
+    // 初始化时从 localStorage 加载，确保刷新后保持选择
     currentModel: localStorage.getItem('chat-model') || 'deepseek-chat',
     currentProvider: localStorage.getItem('chat-provider') || 'deepseek',
     availableModels: [],
     availableProviders: {},
 
-    // ========== 会话状�?==========
+    // ========== 会话状态 ==========
     activeSessionId: null,        // 当前活动会话ID
     currentSession: null,         // 当前会话详情（包含provider、model等）
-    sessions: [],                 // 会话列表（原historyList�?
-    // ========== 消息状�?==========
-    messages: [],                 // 当前会话的消息列�?
-    // ========== UI状�?==========
+    sessions: [],                 // 会话列表（原historyList）
+
+    // ========== 消息状态 ==========
+    messages: [],                 // 当前会话的消息列表
+
+    // ========== UI状态 ==========
     isTyping: false,              // AI是否正在输入
     isLoading: false,             // 是否正在加载
     isSettingsModalOpen: false,   // 设置模态框是否打开
@@ -124,7 +127,7 @@ export const useChatStore = defineStore('chat', {
     isResearchMode: false,
     researchSessionId: null,
 
-    // ========== 系统状�?==========
+    // ========== 系统状态 ==========
     systemStatus: null,
     connectionStatus: 'disconnected', // disconnected, connecting, connected, error
 
@@ -142,13 +145,15 @@ export const useChatStore = defineStore('chat', {
       maxContextTokens: 128000,
     },
 
-    // ========== 上下文状�?==========
+    // ========== 上下文状态 ==========
     contextStatus: null,
 
-    // ========== 错误状�?==========
-    lastError: null,              // 最后一次错�?
-    // ========== 输入状态（集中管理�?==========
-    inputText: '',                // 当前输入框内�?    inputDrafts: {},              // 各会话的草稿 { sessionId: content }
+    // ========== 错误状态 ==========
+    lastError: null,              // 最后一次错误
+
+    // ========== 输入状态（集中管理） ==========
+    inputText: '',                // 当前输入框内容
+    inputDrafts: {},              // 各会话的草稿 { sessionId: content }
 
     // ========== 主题设置 ==========
     theme: 'dark',                // 'dark' | 'light'
@@ -156,7 +161,8 @@ export const useChatStore = defineStore('chat', {
 
   getters: {
     /**
-     * 是否有活动会�?     */
+     * 是否有活动会话
+     */
     hasActiveSession: (state) => !!state.activeSessionId,
 
     /**
@@ -165,7 +171,8 @@ export const useChatStore = defineStore('chat', {
     messageCount: (state) => state.messages.length,
 
     /**
-     * 获取会话列表（按更新时间排序�?     */
+     * 获取会话列表（按更新时间排序）
+     */
     sortedSessions: (state) => {
       return [...(state.sessions || [])].sort((a, b) => {
         const dateA = new Date(a.updated_at || a.created_at)
@@ -175,16 +182,19 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 历史列表（兼容旧API�?     * 确保返回数组，防�?null/undefined
+     * 历史列表（兼容旧API）
+     * 确保返回数组，防止 null/undefined
      */
     historyList: (state) => state.sessions || [],
 
     /**
-     * 上下文是否接近限�?     */
+     * 上下文是否接近限制
+     */
     isContextNearLimit: (state) => state.contextStatus?.is_near_limit || false,
 
     /**
-     * 上下文是否超过限�?     */
+     * 上下文是否超过限制
+     */
     isContextOverLimit: (state) => state.contextStatus?.is_over_limit || false,
 
     /**
@@ -193,7 +203,8 @@ export const useChatStore = defineStore('chat', {
     contextUsagePercent: (state) => state.contextStatus?.usage_percent || 0,
 
     /**
-     * 是否已连�?     */
+     * 是否已连接
+     */
     isConnected: (state) => state.connectionStatus === 'connected',
   },
 
@@ -203,7 +214,8 @@ export const useChatStore = defineStore('chat', {
     /**
      * 处理API错误
      * @param {Error} error - 错误对象
-     * @param {string} context - 错误上下文描�?     * @returns {Object} 解析后的错误信息
+     * @param {string} context - 错误上下文描述
+     * @returns {Object} 解析后的错误信息
      */
     handleError(error, context = '') {
       const parsedError = parseAPIError(error)
@@ -217,7 +229,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 清除错误状�?     */
+     * 清除错误状态
+     */
     clearError() {
       this.lastError = null
     },
@@ -231,11 +244,13 @@ export const useChatStore = defineStore('chat', {
     setModel(modelName) {
       this.currentModel = modelName
 
-      // 从可用模型列表中查找提供�?      const model = this.availableModels.find(m => m.name === modelName || m.id === modelName)
+      // 从可用模型列表中查找提供商
+      const model = this.availableModels.find(m => m.name === modelName || m.id === modelName)
       if (model) {
         this.currentProvider = model.provider
       } else {
-        // 根据模型名称推断提供�?        if (modelName.startsWith('deepseek')) {
+        // 根据模型名称推断提供商
+        if (modelName.startsWith('deepseek')) {
           this.currentProvider = 'deepseek'
         } else if (modelName.startsWith('glm')) {
           this.currentProvider = 'zhipu'
@@ -248,19 +263,23 @@ export const useChatStore = defineStore('chat', {
       localStorage.setItem('chat-model', this.currentModel)
       localStorage.setItem('chat-provider', this.currentProvider)
 
-      logger.log('[Store] 设置模型:', modelName, '提供�?', this.currentProvider, '(已持久化)')
+      logger.log('[Store] 设置模型:', modelName, '提供商:', this.currentProvider, '(已持久化)')
     },
 
     /**
-     * 设置当前提供�?     * @param {string} providerName - 提供商名�?     */
+     * 设置当前提供商
+     * @param {string} providerName - 提供商名称
+     */
     setProvider(providerName) {
       this.currentProvider = providerName
       localStorage.setItem('chat-provider', this.currentProvider)
-      logger.log('[Store] 设置提供�?', providerName, '(已持久化)')
+      logger.log('[Store] 设置提供商:', providerName, '(已持久化)')
     },
 
     /**
-     * 初始化模型配置（�?localStorage 加载�?     * 应在应用启动时调�?     */
+     * 初始化模型配置（从 localStorage 加载）
+     * 应在应用启动时调用
+     */
     initModel() {
       const savedModel = localStorage.getItem('chat-model')
       const savedProvider = localStorage.getItem('chat-provider')
@@ -272,7 +291,7 @@ export const useChatStore = defineStore('chat', {
         this.currentProvider = savedProvider
       }
 
-      logger.log('[Store] 初始化模型配�?', this.currentModel, '提供�?', this.currentProvider)
+      logger.log('[Store] 初始化模型配置:', this.currentModel, '提供商:', this.currentProvider)
     },
 
     /**
@@ -303,7 +322,7 @@ export const useChatStore = defineStore('chat', {
 
         this.sessions = sessions.map(session => ({
           id: session.id,
-          title: session.title || '新对�?,
+          title: session.title || '新对话',
           provider: session.provider,
           model: session.model,
           messageCount: session.message_count || 0,
@@ -313,7 +332,7 @@ export const useChatStore = defineStore('chat', {
           pinned: session.is_pinned || false
         }))
 
-        logger.log('[Store] 会话列表加载成功:', this.sessions.length, '个会�?)
+        logger.log('[Store] 会话列表加载成功:', this.sessions.length, '个会话')
         return this.sessions
       } catch (error) {
         this.handleError(error, '获取会话列表')
@@ -330,22 +349,26 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 切换到指定会�?     * @param {string} sessionId - 会话ID
+     * 切换到指定会话
+     * @param {string} sessionId - 会话ID
      */
     async switchSession(sessionId) {
       if (this.activeSessionId === sessionId) {
-        return // 已经是当前会�?      }
+        return // 已经是当前会话
+      }
 
       // 中止当前请求
       this.abortCurrentRequest()
       this.isLoading = true
       this.clearError()
 
-      // 保存旧消息以便恢�?      const previousMessages = [...this.messages]
+      // 保存旧消息以便恢复
+      const previousMessages = [...this.messages]
       const previousSessionId = this.activeSessionId
       const previousSession = this.currentSession
 
-      // 先清空当前状态，防止老数据残�?      this.messages = []
+      // 先清空当前状态，防止老数据残留
+      this.messages = []
       this.contextStatus = null
 
       try {
@@ -363,9 +386,11 @@ export const useChatStore = defineStore('chat', {
         // 更新当前会话ID
         this.activeSessionId = sessionId
 
-        // 消息加载完成后刷新上下文状�?        this.fetchContextStatus(sessionId)
+        // 消息加载完成后刷新上下文状态
+        this.fetchContextStatus(sessionId)
 
-        // 同步会话的模型和提供�?        const session = this.sessions.find(s => s.id === sessionId)
+        // 同步会话的模型和提供商
+        const session = this.sessions.find(s => s.id === sessionId)
         if (session) {
           this.currentSession = session
           this.currentModel = session.model
@@ -379,9 +404,10 @@ export const useChatStore = defineStore('chat', {
             this.currentModel = sessionData.model
             this.currentProvider = sessionData.provider
 
-            // 添加到会话列表以便下次使�?            this.sessions.unshift({
+            // 添加到会话列表以便下次使用
+            this.sessions.unshift({
               id: sessionData.id,
-              title: sessionData.title || '新对�?,
+              title: sessionData.title || '新对话',
               provider: sessionData.provider,
               model: sessionData.model,
               messageCount: sessionData.message_count || 0,
@@ -392,21 +418,24 @@ export const useChatStore = defineStore('chat', {
             })
           } catch (e) {
             logger.error('[Store] 获取会话详情失败:', e)
-            // 重新抛出错误让调用者处�?            throw e
+            // 重新抛出错误让调用者处理
+            throw e
           }
         }
 
-        logger.log('[Store] 切换到会�?', sessionId, '消息�?', this.messages.length)
+        logger.log('[Store] 切换到会话:', sessionId, '消息数:', this.messages.length)
       } catch (error) {
         const parsedError = this.handleError(error, '加载会话')
 
         // 根据错误类型处理
         if (parsedError.code === 'ERR_SESSION_NOT_FOUND') {
-          // 会话不存在，从列表中移除并清空当前状�?          this.sessions = this.sessions.filter(s => s.id !== sessionId)
+          // 会话不存在，从列表中移除并清空当前状态
+          this.sessions = this.sessions.filter(s => s.id !== sessionId)
           this.activeSessionId = null
           this.currentSession = null
         } else {
-          // 其他错误，尝试恢复之前的状�?          this.messages = previousMessages
+          // 其他错误，尝试恢复之前的状态
+          this.messages = previousMessages
           this.activeSessionId = previousSessionId
           this.currentSession = previousSession
         }
@@ -423,17 +452,19 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 创建新会�?     * @param {Object} options - 会话选项
+     * 创建新会话
+     * @param {Object} options - 会话选项
      */
     async createSession(options = {}) {
-      // 先清空当前状�?      this.abortCurrentRequest()
+      // 先清空当前状态
+      this.abortCurrentRequest()
       this.messages = []
       this.contextStatus = null
       this.isTyping = false
       this.clearError()
 
       const sessionData = {
-        title: options.title || '新对�?,
+        title: options.title || '新对话',
         llm_provider: options.provider || this.currentProvider,
         model_name: options.model || this.currentModel,
         system_prompt: options.systemPrompt || '',
@@ -453,19 +484,23 @@ export const useChatStore = defineStore('chat', {
           createdAt: new Date(),
         }
 
-        // 添加到会话列�?        this.sessions.unshift(newSession)
+        // 添加到会话列表
+        this.sessions.unshift(newSession)
 
-        // 同步设置所有相关状�?        this.activeSessionId = newSession.id
+        // 同步设置所有相关状态
+        this.activeSessionId = newSession.id
         this.currentSession = newSession
         this.currentModel = newSession.model
         this.currentProvider = newSession.provider
 
-        logger.log('[Store] 创建新会�?', newSession.id)
+        logger.log('[Store] 创建新会话:', newSession.id)
         return newSession
       } catch (error) {
         this.handleError(error, '创建会话')
-        // 创建失败时恢复之前的会话状�?        if (this.sessions.length > 0 && !this.activeSessionId) {
-          // 可以选择切换到第一个会话或保持空状�?        }
+        // 创建失败时恢复之前的会话状态
+        if (this.sessions.length > 0 && !this.activeSessionId) {
+          // 可以选择切换到第一个会话或保持空状态
+        }
         throw error
       }
     },
@@ -481,7 +516,8 @@ export const useChatStore = defineStore('chat', {
         // 从列表中移除
         this.sessions = this.sessions.filter(s => s.id !== sessionId)
 
-        // 如果删除的是当前会话，清空所有相关状�?        if (this.activeSessionId === sessionId) {
+        // 如果删除的是当前会话，清空所有相关状态
+        if (this.activeSessionId === sessionId) {
           this.activeSessionId = null
           this.currentSession = null
           this.messages = []
@@ -495,7 +531,8 @@ export const useChatStore = defineStore('chat', {
       } catch (error) {
         const parsedError = this.handleError(error, '删除会话')
 
-        // 如果会话已不存在，也从本地列表移�?        if (parsedError.code === 'ERR_SESSION_NOT_FOUND') {
+        // 如果会话已不存在，也从本地列表移除
+        if (parsedError.code === 'ERR_SESSION_NOT_FOUND') {
           this.sessions = this.sessions.filter(s => s.id !== sessionId)
           if (this.activeSessionId === sessionId) {
             this.activeSessionId = null
@@ -509,7 +546,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 删除所有会�?     */
+     * 删除所有会话
+     */
     async deleteAllSessions() {
       const sessionIds = this.sessions.map(s => s.id)
 
@@ -525,7 +563,8 @@ export const useChatStore = defineStore('chat', {
       }
 
       try {
-        // 使用批量删除API，一次性删除所有会�?        await chatAPI.batchDeleteSessions(sessionIds)
+        // 使用批量删除API，一次性删除所有会话
+        await chatAPI.batchDeleteSessions(sessionIds)
       } catch (error) {
         logger.warn('[Store] 批量删除失败，回退到逐个删除:', error)
         // 回退到逐个删除
@@ -542,7 +581,8 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
-      // 清空本地状�?      this.sessions = []
+      // 清空本地状态
+      this.sessions = []
       this.activeSessionId = null
       this.currentSession = null
       this.messages = []
@@ -550,7 +590,7 @@ export const useChatStore = defineStore('chat', {
       this.isTyping = false
       this.clearError()
 
-      logger.log('[Store] 删除所有会话完�?)
+      logger.log('[Store] 删除所有会话完成')
       return { success: true, failedCount: 0 }
     },
 
@@ -560,10 +600,13 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 清空所有历史记录（包括本地和服务器�?     * 修复：DataManagementSettings.vue 调用此方�?     */
+     * 清空所有历史记录（包括本地和服务器）
+     * 修复：DataManagementSettings.vue 调用此方法
+     */
     async clearAllHistory() {
       try {
-        // 删除服务器上的所有会�?        await this.deleteAllSessions()
+        // 删除服务器上的所有会话
+        await this.deleteAllSessions()
 
         // 清除本地存储
         localStorage.removeItem('chat_history')
@@ -596,7 +639,7 @@ export const useChatStore = defineStore('chat', {
 
     /**
      * 更新消息内容
-     * 修复：使�?Vue 响应式方式更新，确保 UI 实时刷新
+     * 修复：使用 Vue 响应式方式更新，确保 UI 实时刷新
      */
     updateMessageContent({ messageId, contentChunk, keepThinking = false, metadata = null }) {
       const messageIndex = this.messages.findIndex(m => m.id === messageId)
@@ -619,7 +662,7 @@ export const useChatStore = defineStore('chat', {
 
     /**
      * 追加消息内容（用于流式响应）
-     * 修复：使�?Vue 响应式方式更新，确保 UI 实时刷新
+     * 修复：使用 Vue 响应式方式更新，确保 UI 实时刷新
      */
     appendMessageContent({ messageId, contentChunk }) {
       const messageIndex = this.messages.findIndex(m => m.id === messageId)
@@ -646,7 +689,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 从指定索引替换消�?     */
+     * 从指定索引替换消息
+     */
     replaceMessagesFromIndex(startIndex, newMessages = []) {
       this.messages.splice(startIndex)
       if (Array.isArray(newMessages) && newMessages.length > 0) {
@@ -657,7 +701,8 @@ export const useChatStore = defineStore('chat', {
     // ==================== 请求控制 ====================
 
     /**
-     * 设置请求控制�?     */
+     * 设置请求控制器
+     */
     setCurrentRequestController(controller) {
       this.currentRequestController = controller
     },
@@ -673,10 +718,11 @@ export const useChatStore = defineStore('chat', {
       this.setTypingStatus(false)
     },
 
-    // ==================== UI状�?====================
+    // ==================== UI状态 ====================
 
     /**
-     * 设置输入状�?     */
+     * 设置输入状态
+     */
     setTypingStatus(status) {
       this.isTyping = status
     },
@@ -727,22 +773,25 @@ export const useChatStore = defineStore('chat', {
       logger.log('[Store] 研究模式:', isResearch, '会话ID:', sessionId)
     },
 
-    // ==================== 系统状�?====================
+    // ==================== 系统状态 ====================
 
     /**
-     * 设置连接状�?     */
+     * 设置连接状态
+     */
     setConnectionStatus(status) {
       this.connectionStatus = status
     },
 
     /**
-     * 设置系统状�?     */
+     * 设置系统状态
+     */
     setSystemStatus(status) {
       this.systemStatus = status
     },
 
     /**
-     * 检查连�?     */
+     * 检查连接
+     */
     async checkConnection() {
       this.setConnectionStatus('connecting')
 
@@ -752,7 +801,7 @@ export const useChatStore = defineStore('chat', {
         this.setConnectionStatus('connected')
         return true
       } catch (error) {
-        logger.error('[Store] 连接检查失�?', error)
+        logger.error('[Store] 连接检查失败:', error)
         this.setConnectionStatus('error')
         return false
       }
@@ -765,7 +814,7 @@ export const useChatStore = defineStore('chat', {
      */
     savePersonalizationSettings(settings) {
       this.personalizationSettings = { ...this.personalizationSettings, ...settings }
-      logger.log('[Store] 个性化设置已保�?)
+      logger.log('[Store] 个性化设置已保存')
     },
 
     /**
@@ -776,22 +825,25 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 设置上下文状�?     */
+     * 设置上下文状态
+     */
     setContextStatus(status) {
       this.contextStatus = status
     },
 
-    // ==================== 输入状态管�?====================
+    // ==================== 输入状态管理 ====================
 
     /**
      * 设置输入文本
-     * 修复：集中管理输入状态，避免多处修改导致状态不一�?     */
+     * 修复：集中管理输入状态，避免多处修改导致状态不一致
+     */
     setInputText(text) {
       this.inputText = text
     },
 
     /**
-     * 保存当前会话的草�?     */
+     * 保存当前会话的草稿
+     */
     saveDraft(sessionId, content) {
       if (!sessionId) sessionId = 'new'
       if (content?.trim()) {
@@ -811,7 +863,8 @@ export const useChatStore = defineStore('chat', {
       if (!sessionId) sessionId = 'new'
       const draft = this.inputDrafts[sessionId]
       if (draft) {
-        // 草稿24小时内有�?        if (Date.now() - draft.timestamp < 24 * 60 * 60 * 1000) {
+        // 草稿24小时内有效
+        if (Date.now() - draft.timestamp < 24 * 60 * 60 * 1000) {
           return draft.content
         }
         delete this.inputDrafts[sessionId]
@@ -841,7 +894,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 检查上下文限制并返回建�?     * @returns {Object|null} 如果接近或超过限制，返回建议信息
+     * 检查上下文限制并返回建议
+     * @returns {Object|null} 如果接近或超过限制，返回建议信息
      */
     checkContextLimit() {
       if (!this.contextStatus) return null
@@ -852,7 +906,7 @@ export const useChatStore = defineStore('chat', {
           code: 'ERR_CONTEXT_OVERFLOW',
           message: '上下文已超出限制',
           suggestion: 'create_new_session',
-          userMessage: '对话上下文过长，建议创建新会话继续对�?,
+          userMessage: '对话上下文过长，建议创建新会话继续对话',
           currentTokens: this.contextStatus.current_tokens,
           maxTokens: this.contextStatus.max_tokens,
         }
@@ -862,9 +916,9 @@ export const useChatStore = defineStore('chat', {
         return {
           type: 'warning',
           code: 'CONTEXT_NEAR_LIMIT',
-          message: '上下文接近限�?,
+          message: '上下文接近限制',
           suggestion: 'consider_new_session',
-          userMessage: '对话上下文即将达到限制，建议适时创建新会�?,
+          userMessage: '对话上下文即将达到限制，建议适时创建新会话',
           currentTokens: this.contextStatus.current_tokens,
           maxTokens: this.contextStatus.max_tokens,
           usagePercent: this.contextStatus.usage_percent,
@@ -875,7 +929,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 获取并更新上下文状�?     * @param {string} sessionId - 会话ID
+     * 获取并更新上下文状态
+     * @param {string} sessionId - 会话ID
      */
     async fetchContextStatus(sessionId) {
       if (!sessionId) return null
@@ -885,7 +940,7 @@ export const useChatStore = defineStore('chat', {
         this.contextStatus = status
         return status
       } catch (error) {
-        logger.warn('[Store] 获取上下文状态失�?', error)
+        logger.warn('[Store] 获取上下文状态失败:', error)
         return null
       }
     },
@@ -917,7 +972,8 @@ export const useChatStore = defineStore('chat', {
     // ==================== 主题管理 ====================
 
     /**
-     * 初始化主�?     */
+     * 初始化主题
+     */
     initTheme() {
       const savedTheme = localStorage.getItem('app-theme')
       if (savedTheme) {
@@ -943,7 +999,7 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
-     * 应用主题�?DOM
+     * 应用主题到 DOM
      */
     applyTheme() {
       if (this.theme === 'dark') {

@@ -199,16 +199,6 @@ const previewFormat = ref('markdown')
 const previewContent = ref('')
 const previewLoading = ref(false)
 
-// 与后端 paper.CountWords 对齐：过滤空白、标点、Markdown 标记
-const countWords = (text) => {
-  if (!text) return 0
-  return [...text].filter(c => {
-    if (c.codePointAt(0) <= 0x20) return false
-    if ('#*_`>-|~'.includes(c)) return false
-    return !c.match(/\p{P}|\p{S}/u)
-  }).length
-}
-
 // 计算总字数（实时反映编辑后的变化）
 const totalWords = computed(() => {
   if (!result.value?.chapters) return result.value?.total_words || 0

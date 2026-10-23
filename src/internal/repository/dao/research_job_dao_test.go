@@ -16,7 +16,8 @@ func TestResearchJobClaimUsesExclusiveLeaseAndFence(t *testing.T) {
 	db := openResearchWorkflowTestDB(t)
 	result := seedQueuedResearch(t, db, 3)
 	jobs := NewResearchJobDAO(db)
-	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	// The queued job uses the real clock; claim after its AvailableAt.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	first, err := jobs.Claim(context.Background(), "worker-a", now, time.Minute)
 	if err != nil {
@@ -83,7 +84,8 @@ func TestResearchJobRetryAndPermanentFailure(t *testing.T) {
 		db := openResearchWorkflowTestDB(t)
 		seedQueuedResearch(t, db, 3)
 		jobs := NewResearchJobDAO(db)
-		now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+		// The queued job uses the real clock; claim after its AvailableAt.
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		job, err := jobs.Claim(context.Background(), "worker-a", now, time.Minute)
 		if err != nil {
 			t.Fatal(err)
@@ -106,7 +108,8 @@ func TestResearchJobRetryAndPermanentFailure(t *testing.T) {
 		db := openResearchWorkflowTestDB(t)
 		result := seedQueuedResearch(t, db, 3)
 		jobs := NewResearchJobDAO(db)
-		now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+		// The queued job uses the real clock; claim after its AvailableAt.
+		now := time.Now().UTC().Truncate(time.Microsecond)
 		job, err := jobs.Claim(context.Background(), "worker-a", now, time.Minute)
 		if err != nil {
 			t.Fatal(err)
@@ -143,7 +146,8 @@ func TestResearchJobClaimReclaimsExpiredFinalAttemptForTerminalization(t *testin
 	db := openResearchWorkflowTestDB(t)
 	seedQueuedResearch(t, db, 1)
 	jobs := NewResearchJobDAO(db)
-	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	// The queued job uses the real clock; claim after its AvailableAt.
+	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	first, err := jobs.Claim(context.Background(), "worker-a", now, time.Minute)
 	if err != nil {
